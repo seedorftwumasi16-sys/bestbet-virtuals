@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, getConfiguredApiUrl } from '@/lib/api';
 import { getSharedSocket } from '@/lib/socket';
 import { AdminCard, AdminTable, ActionBtn, Field } from '../shared';
 
@@ -88,33 +88,64 @@ export default function LiveMatchEditorSection() {
   const [matchStatus, setMatchStatus] = useState('live');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [loadingMatches, setLoadingMatches] = useState(true);
+  const [loadingState, setLoadingState] = useState(false);
+  const [loadingPlayers, setLoadingPlayers] = useState(false);
   const [goalLoading, setGoalLoading] = useState(false);
   const [editGoalId, setEditGoalId] = useState<string | null>(null);
   const [editGoal, setEditGoal] = useState({ team: 'home' as 'home' | 'away', minute: 45, player: '', playerId: '' });
 
   const m = state?.match;
 
-  const loadMatches = useCallback(() => {
-    Promise.all([
-      api<MatchRow[]>('/admin/matches'),
-      api<MatchRow[]>('/admin/matches/history/list?limit=50'),
-    ])
-      .then(([all, hist]) => {
-        console.log('[LiveEditor] loaded matches:', all.length);
-        setMatches(all);
-        setHistory(hist);
-      })
-      .catch((err) => {
-        console.error('[LiveEditor] loadMatches failed:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load matches');
-      });
+  const loadTeamPlayers = useCallback(async (homeId?: string, awayId?: string) => {
+    if (!homeId || !awayId) return { homePlayers: [] as Player[], awayPlayers: [] as Player[] };
+    setLoadingPlayers(true);
+    try {
+      console.log('[LiveEditor] loading players for teams:', homeId, awayId);
+      const [hp, ap] = await Promise.all([
+        api<Player[]>(`/admin/teams/${homeId}/players`),
+        api<Player[]>(`/admin/teams/${awayId}/players`),
+      ]);
+      console.log('[LiveEditor] players loaded:', hp.length, ap.length);
+      return { homePlayers: hp, awayPlayers: ap };
+    } catch (err) {
+      console.error('[LiveEditor] loadTeamPlayers failed:', err);
+      throw err;
+    } finally {
+      setLoadingPlayers(false);
+    }
+  }, []);
+
+  const loadMatches = useCallback(async () => {
+    setLoadingMatches(true);
+    setError(null);
+    try {
+      const all = await api<MatchRow[]>('/admin/matches');
+      console.log('[LiveEditor] loaded matches:', all.length, 'API:', getConfiguredApiUrl());
+      setMatches(all);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to load matches';
+      console.error('[LiveEditor] loadMatches failed:', msg);
+      setError(`Failed to load matches: ${msg}`);
+    }
+    try {
+      const hist = await api<MatchRow[]>('/admin/matches/history/list?limit=50');
+      setHistory(hist);
+    } catch (err) {
+      console.warn('[LiveEditor] history list unavailable (non-fatal):', err);
+      setHistory([]);
+    } finally {
+      setLoadingMatches(false);
+    }
   }, []);
 
   const loadState = useCallback(async (id: string) => {
     if (!id) return;
+    setLoadingState(true);
     setError(null);
     try {
-      console.log('[LiveEditor] loading match state:', id);
+      console.log('[LiveEditor] loading match state, matchId:', id);
       let data: LiveState;
       try {
         data = await api<LiveState>(`/admin/matches/${id}/live`);
@@ -123,15 +154,13 @@ export default function LiveMatchEditorSection() {
         const details = await api<{ match: MatchRow; events: GoalEvent[] }>(`/matches/${id}`);
         const match = details.match;
         if (!match?.home_team_id) throw liveErr;
-        const [homePlayers, awayPlayers] = await Promise.all([
-          api<Player[]>(`/admin/teams/${match.home_team_id}/players`),
-          api<Player[]>(`/admin/teams/${match.away_team_id}/players`),
-        ]);
+        const { homePlayers, awayPlayers } = await loadTeamPlayers(match.home_team_id, match.away_team_id);
         const goals = (details.events || []).filter((e) => e.event_type === 'goal');
         data = { match, goals, events: details.events || [], homePlayers, awayPlayers };
       }
 
       console.log('[LiveEditor] match loaded:', {
+        matchId: id,
         home: data.match?.home_team_name,
         away: data.match?.away_team_name,
         homePlayers: data.homePlayers?.length ?? 0,
@@ -140,14 +169,9 @@ export default function LiveMatchEditorSection() {
       });
 
       const match = data.match;
-      if ((!data.homePlayers?.length || !data.awayPlayers?.length) && match?.home_team_id) {
-        console.log('[LiveEditor] fetching players via /admin/teams/:id/players fallback');
-        const [hp, ap] = await Promise.all([
-          data.homePlayers?.length ? Promise.resolve(data.homePlayers) : api<Player[]>(`/admin/teams/${match.home_team_id}/players`),
-          data.awayPlayers?.length ? Promise.resolve(data.awayPlayers) : api<Player[]>(`/admin/teams/${match.away_team_id}/players`),
-        ]);
-        data = { ...data, homePlayers: hp, awayPlayers: ap };
-        console.log('[LiveEditor] fallback players:', hp.length, ap.length);
+      if ((!data.homePlayers?.length || !data.awayPlayers?.length) && match?.home_team_id && match?.away_team_id) {
+        const { homePlayers, awayPlayers } = await loadTeamPlayers(match.home_team_id, match.away_team_id);
+        data = { ...data, homePlayers, awayPlayers };
       }
 
       setState(data);
@@ -170,8 +194,10 @@ export default function LiveMatchEditorSection() {
       const msg = err instanceof Error ? err.message : 'Failed to load match';
       console.error('[LiveEditor] loadState failed:', msg);
       setError(msg);
+    } finally {
+      setLoadingState(false);
     }
-  }, []);
+  }, [loadTeamPlayers]);
 
   useEffect(() => { loadMatches(); }, [loadMatches]);
 
@@ -238,34 +264,98 @@ export default function LiveMatchEditorSection() {
   };
 
   const addGoal = async () => {
-    if (!selectedId) return;
+    if (!selectedId) {
+      setError('Team Not Selected — choose a match first.');
+      return;
+    }
+    if (!newGoal.team) {
+      setError('Team Not Selected');
+      return;
+    }
     if (!newGoal.playerId && !newGoal.player.trim()) {
-      setError('Select a goal scorer from the dropdown before adding a goal.');
+      setError('Scorer Not Selected — pick a player from the dropdown.');
       return;
     }
     setGoalLoading(true);
     setError(null);
+    setSuccess(null);
+    const payload = {
+      team: newGoal.team,
+      minute: newGoal.minute,
+      player: newGoal.player,
+      playerId: newGoal.playerId || undefined,
+    };
+    console.log('[LiveEditor] Add Goal request:', {
+      matchId: selectedId,
+      team: newGoal.team,
+      scorer: newGoal.player,
+      scorerId: newGoal.playerId,
+      minute: newGoal.minute,
+      endpoint: `POST /api/admin/matches/${selectedId}/goals`,
+    });
     try {
-      console.log('[LiveEditor] adding goal:', newGoal);
       const result = await api<LiveState>(`/admin/matches/${selectedId}/goals`, {
         method: 'POST',
-        body: JSON.stringify({
-          team: newGoal.team,
-          minute: newGoal.minute,
-          player: newGoal.player,
-          playerId: newGoal.playerId || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
-      console.log('[LiveEditor] goal added, new score:', result.match?.home_score, '-', result.match?.away_score);
+      console.log('[LiveEditor] Add Goal API response:', result);
       setState(result);
-      setScores({ home: result.match.home_score ?? 0, away: result.match.away_score ?? 0, minute: result.match.live_minute ?? scores.minute });
+      setScores({
+        home: result.match.home_score ?? 0,
+        away: result.match.away_score ?? 0,
+        minute: result.match.live_minute ?? scores.minute,
+      });
       setNewGoal({ team: newGoal.team, minute: 45, player: '', playerId: '' });
+      setSuccess(`Goal Added Successfully — ${newGoal.player} (${newGoal.minute}')`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to add goal';
-      console.error('[LiveEditor] addGoal failed:', msg);
-      setError(msg);
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      console.error('[LiveEditor] Add Goal failed:', msg);
+      setError(`Failed To Add Goal: ${msg}`);
     } finally {
       setGoalLoading(false);
+    }
+  };
+
+  const quickScore = async (side: 'home' | 'away', delta: number) => {
+    if (!selectedId || !m) return;
+    const next = {
+      home: side === 'home' ? scores.home + delta : scores.home,
+      away: side === 'away' ? scores.away + delta : scores.away,
+      minute: scores.minute,
+    };
+    if (next.home < 0 || next.away < 0) return;
+    setScores(next);
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await api<LiveState>(`/admin/matches/${selectedId}/live`, {
+        method: 'PUT',
+        body: JSON.stringify({ homeScore: next.home, awayScore: next.away, minute: next.minute }),
+      });
+      setState(result);
+      setScores({
+        home: result.match.home_score ?? next.home,
+        away: result.match.away_score ?? next.away,
+        minute: result.match.live_minute ?? next.minute,
+      });
+      setSuccess(`${side === 'home' ? m.home_team_name : m.away_team_name} score updated to ${side === 'home' ? next.home : next.away}`);
+    } catch (err) {
+      setScores(scores);
+      setError(err instanceof Error ? err.message : 'Score update failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reloadPlayers = async () => {
+    if (!m?.home_team_id || !m?.away_team_id) return;
+    setError(null);
+    try {
+      const { homePlayers: hp, awayPlayers: ap } = await loadTeamPlayers(m.home_team_id, m.away_team_id);
+      setState((prev) => (prev ? { ...prev, homePlayers: hp, awayPlayers: ap } : prev));
+      setSuccess(`Loaded ${hp.length} home + ${ap.length} away players`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load players');
     }
   };
 
@@ -367,9 +457,21 @@ export default function LiveMatchEditorSection() {
 
   return (
     <div className="space-y-4">
+      <div className="text-xs text-gray-500 font-mono">API: {getConfiguredApiUrl()}</div>
+
       {error && (
         <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           ⚠️ {error}
+        </div>
+      )}
+      {success && (
+        <div className="rounded-xl border border-green-500/40 bg-green-500/10 px-4 py-3 text-sm text-green-300">
+          ✓ {success}
+        </div>
+      )}
+      {(loadingMatches || loadingState) && (
+        <div className="rounded-xl border border-primary-500/30 bg-primary-500/5 px-4 py-3 text-sm text-primary-300">
+          {loadingMatches ? 'Loading matches…' : 'Loading match state…'}
         </div>
       )}
 
@@ -450,9 +552,17 @@ export default function LiveMatchEditorSection() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <Field label={`${m.home_team_name} Goals`}>
                     <input type="number" min={0} value={scores.home} onChange={(e) => setScores({ ...scores, home: parseInt(e.target.value) || 0 })} className="input-field text-center text-lg font-black min-h-[44px]" />
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" onClick={() => quickScore('home', 1)} className="btn-primary flex-1 text-xs min-h-[36px]">Home +1 Goal</button>
+                      <button type="button" onClick={() => quickScore('home', -1)} disabled={scores.home <= 0} className="btn-secondary flex-1 text-xs min-h-[36px] disabled:opacity-40">−1</button>
+                    </div>
                   </Field>
                   <Field label={`${m.away_team_name} Goals`}>
                     <input type="number" min={0} value={scores.away} onChange={(e) => setScores({ ...scores, away: parseInt(e.target.value) || 0 })} className="input-field text-center text-lg font-black min-h-[44px]" />
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" onClick={() => quickScore('away', 1)} className="btn-primary flex-1 text-xs min-h-[36px]">Away +1 Goal</button>
+                      <button type="button" onClick={() => quickScore('away', -1)} disabled={scores.away <= 0} className="btn-secondary flex-1 text-xs min-h-[36px] disabled:opacity-40">−1</button>
+                    </div>
                   </Field>
                   <Field label="Minute">
                     <input type="number" min={0} max={90} value={scores.minute} onChange={(e) => setScores({ ...scores, minute: parseInt(e.target.value) || 0 })} className="input-field text-center font-mono min-h-[44px]" />
@@ -501,13 +611,18 @@ export default function LiveMatchEditorSection() {
                       )}
                     </select>
                     {teamPlayers.length === 0 && (
-                      <p className="text-xs text-amber-400 mt-1">No players found — squad will auto-generate on reload.</p>
+                      <p className="text-xs text-amber-400 mt-1">
+                        No players found for this team.
+                        <button type="button" onClick={reloadPlayers} disabled={loadingPlayers} className="ml-2 underline text-primary-400">
+                          {loadingPlayers ? 'Loading…' : 'Load players'}
+                        </button>
+                      </p>
                     )}
                   </Field>
                   <div className="flex items-end">
                     <button
                       onClick={addGoal}
-                      disabled={goalLoading || teamPlayers.length === 0}
+                      disabled={goalLoading}
                       className="btn-primary w-full min-h-[44px] touch-manipulation disabled:opacity-50"
                     >
                       {goalLoading ? 'Adding…' : '+ Add Goal'}

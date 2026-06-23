@@ -26,6 +26,13 @@ export function getConfiguredApiUrl(): string {
   return configuredApiUrl;
 }
 
+/** Full URL for an API path (for logging / error display) */
+export function apiUrl(path: string): string {
+  const base = getApiBaseUrl();
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${base}/api${p}`;
+}
+
 export type ApiHealth = {
   status: string;
   service?: string;
@@ -107,6 +114,10 @@ export async function api<T = unknown>(
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
 
+  if (typeof window !== 'undefined') {
+    console.log(`[API] ${options.method || 'GET'} ${url}`);
+  }
+
   let res: Response;
   try {
     res = await fetchWithRetry(url, {
@@ -115,7 +126,9 @@ export async function api<T = unknown>(
       signal: options.signal ?? createTimeoutSignal(30000),
     }, 1);
   } catch (err) {
-    throw new Error(formatFetchError(err));
+    const msg = formatFetchError(err);
+    console.error(`[API] Network error ${url}:`, msg);
+    throw new Error(`${msg} → ${url}`);
   }
 
   let data: Record<string, unknown> = {};
@@ -123,7 +136,11 @@ export async function api<T = unknown>(
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
-    if (!res.ok) throw new Error(`API error (${res.status}): ${text.slice(0, 120) || 'empty response'}`);
+    if (!res.ok) {
+      const errMsg = `API error (${res.status}): ${text.slice(0, 200) || 'empty response'} → ${url}`;
+      console.error('[API]', errMsg);
+      throw new Error(errMsg);
+    }
   }
 
   if (!res.ok) {
@@ -131,7 +148,13 @@ export async function api<T = unknown>(
       (typeof data.error === 'string' && data.error) ||
       (typeof data.message === 'string' && data.message) ||
       `Request failed (${res.status})`;
-    throw new Error(message);
+    const errMsg = `${message} → ${url}`;
+    console.error('[API]', errMsg, data);
+    throw new Error(errMsg);
+  }
+
+  if (typeof window !== 'undefined') {
+    console.log(`[API] ${res.status} ${url}`);
   }
 
   return data as T;

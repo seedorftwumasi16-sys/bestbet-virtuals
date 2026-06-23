@@ -39,6 +39,24 @@ export async function getPlayersByTeam(teamId) {
   return res.rows;
 }
 
+/** Ensure every team has a squad (startup / admin seed) */
+export async function ensureAllTeamSquads() {
+  const teams = await pool.query('SELECT id, short_name, star_rating FROM teams ORDER BY name');
+  let seeded = 0;
+  for (const team of teams.rows) {
+    const countRes = await pool.query(
+      'SELECT COUNT(*)::int AS c FROM players WHERE team_id = $1 AND is_active = TRUE',
+      [team.id]
+    );
+    if (countRes.rows[0].c === 0) {
+      await seedPlayersForTeam(team.id, team.short_name, team.star_rating || 3);
+      seeded++;
+    }
+  }
+  if (seeded > 0) console.log(`✅ Auto-seeded squads for ${seeded} teams`);
+  return seeded;
+}
+
 /** Ensure team has a full European squad; auto-generate if empty */
 export async function ensureTeamSquad(teamId) {
   const countRes = await pool.query(

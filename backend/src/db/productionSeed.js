@@ -51,6 +51,9 @@ export async function runProductionSeed() {
     await seedEuropeanFootball(pool, { reset: count > 0 });
   }
 
+  const { ensureAllTeamSquads } = await import('../services/playerService.js');
+  await ensureAllTeamSquads();
+
   const settings = [
     { key: 'rtp_percentage', value: '92' },
     { key: 'house_profit_percentage', value: '8' },
