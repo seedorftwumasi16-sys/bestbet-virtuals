@@ -26,6 +26,7 @@ export function initMatchScheduler(socketIo) {
 }
 
 async function startMatchCycle() {
+  let intervalMs = 120_000;
   try {
     const paused = await getSetting('competition_paused', 'false');
     if (paused !== 'true') {
@@ -36,11 +37,11 @@ async function startMatchCycle() {
         await generateNextMatches();
       }
     }
+    intervalMs = await getMatchIntervalMs();
   } catch (err) {
     console.error('Match cycle error:', err.message);
   }
 
-  const intervalMs = await getMatchIntervalMs();
   matchCycleTimer = setTimeout(startMatchCycle, intervalMs);
 }
 
