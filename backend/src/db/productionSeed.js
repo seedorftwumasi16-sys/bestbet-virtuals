@@ -47,8 +47,8 @@ export async function runProductionSeed() {
 
   const teamCount = await pool.query('SELECT COUNT(*) as c FROM teams');
   const count = parseInt(teamCount.rows[0].c, 10);
-  if (count < 40) {
-    await seedEuropeanFootball(pool, { reset: count > 0 && count < 40 });
+  if (count !== 30) {
+    await seedEuropeanFootball(pool, { reset: count > 0 });
   }
 
   const settings = [

@@ -1,49 +1,17 @@
 import pool from '../db/pool.js';
 import { generateMatchOdds } from './oddsService.js';
-import { getSetting } from './settingsService.js';
-import { updateLeaguePositions } from './leagueService.js';
 import { getMatchIntervalSeconds } from './matchIntervalService.js';
+import { ensureSeasonFixtures, getNextFixture } from './fixtureService.js';
+import { simulateMatchOutcome } from './simulationService.js';
+import { updateLeaguePositions } from './leagueService.js';
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function simulateGoals(manualScore = null) {
-  if (manualScore) return { home: manualScore.home, away: manualScore.away };
-
-  const homeGoals = randomInt(0, 4);
-  const awayGoals = randomInt(0, 3);
-  return { home: homeGoals, away: awayGoals };
-}
-
-function generateGoalTimes(homeGoals, awayGoals, manualTimes = null) {
-  const events = [];
-  if (manualTimes) return manualTimes;
-
-  for (let i = 0; i < homeGoals; i++) {
-    events.push({ team: 'home', minute: randomInt(1, 90), type: 'goal' });
-  }
-  for (let i = 0; i < awayGoals; i++) {
-    events.push({ team: 'away', minute: randomInt(1, 90), type: 'goal' });
-  }
-  events.sort((a, b) => a.minute - b.minute);
-  return events;
-}
-
-function calcHalfTime(events) {
-  let htHome = 0, htAway = 0;
-  events.forEach((e) => {
-    if (e.minute <= 45 && e.type === 'goal') {
-      if (e.team === 'home') htHome++;
-      else htAway++;
-    }
-  });
-  return { home: htHome, away: htAway };
-}
-
-export async function createScheduledMatch(homeTeamId, awayTeamId, scheduledAt, leagueName = null, leagueId = null) {
+export async function createScheduledMatch(homeTeamId, awayTeamId, scheduledAt, leagueName = null, leagueId = null, fixtureId = null) {
   const teams = await pool.query(
-    'SELECT id, strength, league FROM teams WHERE id IN ($1, $2)',
+    `SELECT id, strength, attack_rating, midfield_rating, defense_rating, league FROM teams WHERE id IN ($1, $2)`,
     [homeTeamId, awayTeamId]
   );
   const homeTeam = teams.rows.find((t) => t.id === homeTeamId);
@@ -71,12 +39,23 @@ export async function createScheduledMatch(homeTeamId, awayTeamId, scheduledAt, 
       [match.id, o.market, o.selection, o.odds]
     );
   }
+
+  if (fixtureId) {
+    await pool.query('UPDATE season_fixtures SET match_id = $2 WHERE id = $1', [fixtureId, match.id]);
+  }
+
   return match;
 }
 
 export async function generateNextMatches() {
+  await ensureSeasonFixtures();
+
   const leaguesRes = await pool.query(
-    `SELECT DISTINCT league FROM teams WHERE is_active = TRUE AND league IS NOT NULL ORDER BY league`
+    `SELECT DISTINCT t.league, l.id AS league_id
+     FROM teams t
+     LEFT JOIN leagues l ON l.name = t.league
+     WHERE t.is_active = TRUE AND t.league IS NOT NULL
+     ORDER BY t.league`
   );
   if (!leaguesRes.rows.length) return [];
 
@@ -84,26 +63,49 @@ export async function generateNextMatches() {
   const baseTime = Date.now() + intervalSec * 1000;
   const matches = [];
 
+  const liveCount = await pool.query(`SELECT COUNT(*)::int AS c FROM matches WHERE status IN ('scheduled','live')`);
+  if (liveCount.rows[0].c >= leaguesRes.rows.length) return [];
+
   for (let i = 0; i < leaguesRes.rows.length; i++) {
-    const leagueName = leaguesRes.rows[i].league;
-    const teamsRes = await pool.query(
-      'SELECT id FROM teams WHERE is_active = TRUE AND league = $1 ORDER BY RANDOM()',
+    const { league: leagueName, league_id: leagueId } = leaguesRes.rows[i];
+
+    const existing = await pool.query(
+      `SELECT m.id FROM matches m
+       JOIN teams ht ON m.home_team_id = ht.id
+       WHERE ht.league = $1 AND m.status IN ('scheduled', 'live') LIMIT 1`,
       [leagueName]
     );
-    const teams = teamsRes.rows;
-    if (teams.length < 2) continue;
+    if (existing.rows.length) continue;
 
-    let home = teams[0];
-    let away = teams[1];
-    if (teams.length > 2) {
-      home = teams[randomInt(0, teams.length - 1)];
-      do {
-        away = teams[randomInt(0, teams.length - 1)];
-      } while (away.id === home.id);
+    let homeId;
+    let awayId;
+    let fixtureId = null;
+
+    if (leagueId) {
+      const fixture = await getNextFixture(leagueId);
+      if (fixture) {
+        homeId = fixture.home_team_id;
+        awayId = fixture.away_team_id;
+        fixtureId = fixture.id;
+      }
     }
 
-    const scheduledAt = new Date(baseTime + i * 5000);
-    const match = await createScheduledMatch(home.id, away.id, scheduledAt, leagueName);
+    if (!homeId || !awayId) {
+      const teamsRes = await pool.query(
+        'SELECT id FROM teams WHERE is_active = TRUE AND league = $1 ORDER BY RANDOM()',
+        [leagueName]
+      );
+      const teams = teamsRes.rows;
+      if (teams.length < 2) continue;
+      let home = teams[randomInt(0, teams.length - 1)];
+      let away = teams[randomInt(0, teams.length - 1)];
+      while (away.id === home.id) away = teams[randomInt(0, teams.length - 1)];
+      homeId = home.id;
+      awayId = away.id;
+    }
+
+    const scheduledAt = new Date(baseTime + i * 8000);
+    const match = await createScheduledMatch(homeId, awayId, scheduledAt, leagueName, leagueId, fixtureId);
     matches.push(match);
   }
   return matches;
@@ -117,73 +119,19 @@ export async function startMatch(matchId) {
 }
 
 export async function simulateMatch(matchId, manualData = null) {
-  const matchRes = await pool.query(
-    `SELECT m.*, ht.name as home_name, at.name as away_name
-     FROM matches m
-     JOIN teams ht ON m.home_team_id = ht.id
-     JOIN teams at ON m.away_team_id = at.id
-     WHERE m.id = $1`,
-    [matchId]
-  );
-  if (!matchRes.rows[0]) throw new Error('Match not found');
-  const match = matchRes.rows[0];
-
-  let homeScore, awayScore, events, firstGoalTeamId = null;
-
+  const { forceFinishMatch } = await import('./schedulerService.js');
   if (manualData) {
-    homeScore = manualData.home_score;
-    awayScore = manualData.away_score;
-    events = manualData.goal_times || generateGoalTimes(homeScore, awayScore);
-  } else {
-    const scores = simulateGoals();
-    homeScore = scores.home;
-    awayScore = scores.away;
-    events = generateGoalTimes(homeScore, awayScore);
+    return forceFinishMatch(matchId, manualData);
   }
-
-  const ht = calcHalfTime(events);
-  const possessionHome = randomInt(35, 65);
-  const shotsHome = randomInt(5, 18);
-  const shotsAway = randomInt(3, 15);
-  const cornersHome = randomInt(2, 10);
-  const cornersAway = randomInt(1, 8);
-  const yellowHome = randomInt(0, 3);
-  const yellowAway = randomInt(0, 3);
-
-  for (const e of events) {
-    const teamId = e.team === 'home' ? match.home_team_id : match.away_team_id;
-    if (e.type === 'goal' && !firstGoalTeamId) firstGoalTeamId = teamId;
-    await pool.query(
-      `INSERT INTO match_events (match_id, event_type, team_id, minute, description)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [matchId, e.type, teamId, e.minute, `${e.type} at ${e.minute}'`]
-    );
-  }
-
-  await pool.query(
-    `UPDATE matches SET
-      status = 'finished', finished_at = NOW(),
-      home_score = $2, away_score = $3,
-      half_time_home = $4, half_time_away = $5,
-      possession_home = $6, possession_away = $7,
-      shots_home = $8, shots_away = $9,
-      corners_home = $10, corners_away = $11,
-      yellow_cards_home = $12, yellow_cards_away = $13,
-      first_goal_team_id = $14, is_manual = $15, updated_at = NOW()
-     WHERE id = $1`,
-    [
-      matchId, homeScore, awayScore, ht.home, ht.away,
-      possessionHome, 100 - possessionHome, shotsHome, shotsAway,
-      cornersHome, cornersAway, yellowHome, yellowAway,
-      firstGoalTeamId, manualData ? true : false,
-    ]
-  );
-
-  await updateLeagueTable(match.home_team_id, match.away_team_id, homeScore, awayScore);
-  await updateTeamForm(match.home_team_id, matchId, homeScore, awayScore, true);
-  await updateTeamForm(match.away_team_id, matchId, awayScore, homeScore, false);
-
-  return { homeScore, awayScore, events, ht };
+  const matchRes = await pool.query('SELECT home_team_id, away_team_id FROM matches WHERE id = $1', [matchId]);
+  if (!matchRes.rows[0]) throw new Error('Match not found');
+  const { home_team_id, away_team_id } = matchRes.rows[0];
+  const outcome = await simulateMatchOutcome(home_team_id, away_team_id);
+  return forceFinishMatch(matchId, {
+    home_score: outcome.homeGoals,
+    away_score: outcome.awayGoals,
+    goal_times: outcome.events,
+  });
 }
 
 async function updateLeagueTable(homeId, awayId, homeScore, awayScore) {

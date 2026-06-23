@@ -44,20 +44,36 @@ function createTimeoutSignal(ms: number): AbortSignal {
   return controller.signal;
 }
 
+async function fetchWithRetry(url: string, init: RequestInit = {}, retries = 2): Promise<Response> {
+  let lastErr: unknown;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      lastErr = err;
+      if (i < retries) await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 export async function checkApiHealth(): Promise<ApiHealth> {
   const base = getApiBaseUrl();
   const url = `${base}/api/health`;
   try {
-    const res = await fetch(url, { signal: createTimeoutSignal(8000) });
+    const res = await fetchWithRetry(url, { signal: createTimeoutSignal(15000) }, 2);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return { status: 'error', error: data.error || `HTTP ${res.status}` };
+    if (data.status === 'starting') {
+      return { status: 'starting', database: data.database, service: data.service };
+    }
     return data as ApiHealth;
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Network error';
     return {
       status: 'error',
-      error: msg.includes('fetch')
-        ? `Cannot reach backend at ${configuredApiUrl}. Start it with: cd backend && npm run dev`
+      error: msg.includes('fetch') || msg.includes('timeout') || msg.includes('abort')
+        ? `Cannot reach backend at ${configuredApiUrl}`
         : msg,
     };
   }
@@ -93,11 +109,11 @@ export async function api<T = unknown>(
 
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await fetchWithRetry(url, {
       ...options,
       headers,
       signal: options.signal ?? createTimeoutSignal(30000),
-    });
+    }, 1);
   } catch (err) {
     throw new Error(formatFetchError(err));
   }

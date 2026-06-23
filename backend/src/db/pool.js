@@ -39,7 +39,6 @@ if (useMem) {
   mem.public.none(schema);
   try {
     const adminSchema = fs.readFileSync(path.join(__dirname, 'schema-admin.sql'), 'utf8');
-    // pg-mem: strip ALTER CONSTRAINT lines that may fail on fresh schema
     const adminLines = adminSchema
       .split('\n')
       .filter((line) => !line.includes('DROP CONSTRAINT') && !line.includes('ADD CONSTRAINT'))
@@ -47,6 +46,13 @@ if (useMem) {
     mem.public.none(adminLines);
   } catch {
     /* schema-admin optional for mem */
+  }
+
+  try {
+    const playersSchema = fs.readFileSync(path.join(__dirname, 'schema-players.sql'), 'utf8');
+    mem.public.none(playersSchema);
+  } catch {
+    /* optional */
   }
 
   const { Pool } = mem.adapters.createPg();

@@ -1,16 +1,23 @@
-import { EUROPEAN_LEAGUES, EUROPEAN_TEAMS } from '../data/europeanFootball.js';
+import { EUROPEAN_LEAGUES, EUROPEAN_TEAMS, EXPECTED_TEAM_COUNT } from '../data/europeanFootball.js';
 import { generateNextMatches } from '../services/matchEngine.js';
+import { seedPlayersForTeam } from '../services/playerService.js';
+import { ensureSeasonFixtures } from '../services/fixtureService.js';
 
 /**
- * Seed European leagues, teams, and league tables (replaces fictional Ghana teams in dev).
+ * Seed exactly 30 European clubs with ratings, squads, and league tables.
  */
 export async function seedEuropeanFootball(pool, { reset = false } = {}) {
-  if (reset) {
+  const countRes = await pool.query('SELECT COUNT(*)::int AS c FROM teams');
+  const currentCount = countRes.rows[0].c;
+
+  if (reset || (currentCount > 0 && currentCount !== EXPECTED_TEAM_COUNT)) {
     await pool.query('DELETE FROM bet_selections').catch(() => {});
     await pool.query('DELETE FROM bets').catch(() => {});
     await pool.query('DELETE FROM match_events').catch(() => {});
     await pool.query('DELETE FROM match_odds').catch(() => {});
     await pool.query('DELETE FROM team_form').catch(() => {});
+    await pool.query('DELETE FROM season_fixtures').catch(() => {});
+    await pool.query('DELETE FROM players').catch(() => {});
     await pool.query('DELETE FROM matches').catch(() => {});
     await pool.query('DELETE FROM league_table').catch(() => {});
     await pool.query('DELETE FROM teams').catch(() => {});
@@ -36,7 +43,6 @@ export async function seedEuropeanFootball(pool, { reset = false } = {}) {
   }
 
   let position = 1;
-  const teamsByLeague = {};
 
   for (const team of EUROPEAN_TEAMS) {
     const existing = await pool.query('SELECT id FROM teams WHERE short_name = $1', [team.short]);
@@ -44,30 +50,38 @@ export async function seedEuropeanFootball(pool, { reset = false } = {}) {
     if (existing.rows[0]) {
       teamId = existing.rows[0].id;
       await pool.query(
-        `UPDATE teams SET name = $1, league = $2, strength = $3, color_primary = $4, color_secondary = $5,
-         is_active = true, updated_at = NOW() WHERE id = $6`,
-        [team.name, team.league, team.strength, team.colorPrimary, team.colorSecondary, teamId]
+        `UPDATE teams SET name = $1, league = $2, strength = $3, star_rating = $4,
+         attack_rating = $5, midfield_rating = $6, defense_rating = $7,
+         color_primary = $8, color_secondary = $9, logo_url = $10,
+         is_active = true, updated_at = NOW() WHERE id = $11`,
+        [
+          team.name, team.league, team.strength, team.starRating,
+          team.attack, team.midfield, team.defense,
+          team.colorPrimary, team.colorSecondary, team.logoUrl, teamId,
+        ]
       );
     } else {
       const res = await pool.query(
-        `INSERT INTO teams (name, short_name, league, strength, color_primary, color_secondary, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING id`,
-        [team.name, team.short, team.league, team.strength, team.colorPrimary, team.colorSecondary]
+        `INSERT INTO teams (name, short_name, league, strength, star_rating, attack_rating, midfield_rating, defense_rating, color_primary, color_secondary, logo_url, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true) RETURNING id`,
+        [
+          team.name, team.short, team.league, team.strength, team.starRating,
+          team.attack, team.midfield, team.defense,
+          team.colorPrimary, team.colorSecondary, team.logoUrl,
+        ]
       );
       teamId = res.rows[0].id;
     }
 
-    if (!teamsByLeague[team.league]) teamsByLeague[team.league] = [];
-    teamsByLeague[team.league].push(teamId);
+    await seedPlayersForTeam(teamId, team.short, team.starRating);
 
     const lt = await pool.query('SELECT id FROM league_table WHERE team_id = $1', [teamId]);
     if (!lt.rows[0]) {
-      await pool.query(
-        'INSERT INTO league_table (team_id, position) VALUES ($1, $2)',
-        [teamId, position++]
-      );
+      await pool.query('INSERT INTO league_table (team_id, position) VALUES ($1, $2)', [teamId, position++]);
     }
   }
+
+  await ensureSeasonFixtures();
 
   const scheduled = await pool.query(
     `SELECT COUNT(*) as c FROM matches WHERE status IN ('scheduled', 'live')`
@@ -77,5 +91,5 @@ export async function seedEuropeanFootball(pool, { reset = false } = {}) {
   }
 
   console.log(`✅ European football seeded: ${EUROPEAN_TEAMS.length} teams, ${EUROPEAN_LEAGUES.length} leagues`);
-  return { leagueIds, teamsByLeague };
+  return { leagueIds };
 }

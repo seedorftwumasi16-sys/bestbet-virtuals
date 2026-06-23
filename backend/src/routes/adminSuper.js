@@ -199,15 +199,45 @@ router.put('/matches/:id/restart', async (req, res) => {
     [req.params.id]
   );
   await pool.query('DELETE FROM match_events WHERE match_id = $1', [req.params.id]);
-  await generateMatchOdds(req.params.id);
+  const matchRes = await pool.query(
+    `SELECT ht.strength AS home_strength, at.strength AS away_strength
+     FROM matches m JOIN teams ht ON m.home_team_id = ht.id JOIN teams at ON m.away_team_id = at.id
+     WHERE m.id = $1`,
+    [req.params.id]
+  );
+  if (matchRes.rows[0]) {
+    await pool.query('DELETE FROM match_odds WHERE match_id = $1', [req.params.id]);
+    const odds = generateMatchOdds(matchRes.rows[0].home_strength || 50, matchRes.rows[0].away_strength || 50);
+    for (const o of odds) {
+      await pool.query(
+        'INSERT INTO match_odds (match_id, market, selection, odds) VALUES ($1, $2, $3, $4)',
+        [req.params.id, o.market, o.selection, o.odds]
+      );
+    }
+  }
   await auditLog(req.user.id, 'match_restarted', 'match', req.params.id, {}, req.ip);
   res.json({ message: 'Match restarted' });
 });
 
 router.post('/matches/:id/regenerate-odds', async (req, res) => {
-  await generateMatchOdds(req.params.id);
-  const odds = await pool.query('SELECT * FROM match_odds WHERE match_id = $1', [req.params.id]);
-  res.json(odds.rows);
+  const matchRes = await pool.query(
+    `SELECT ht.strength AS home_strength, at.strength AS away_strength
+     FROM matches m JOIN teams ht ON m.home_team_id = ht.id JOIN teams at ON m.away_team_id = at.id
+     WHERE m.id = $1`,
+    [req.params.id]
+  );
+  if (!matchRes.rows[0]) return res.status(404).json({ error: 'Match not found' });
+  const { home_strength, away_strength } = matchRes.rows[0];
+  await pool.query('DELETE FROM match_odds WHERE match_id = $1', [req.params.id]);
+  const odds = generateMatchOdds(home_strength || 50, away_strength || 50);
+  for (const o of odds) {
+    await pool.query(
+      'INSERT INTO match_odds (match_id, market, selection, odds) VALUES ($1, $2, $3, $4)',
+      [req.params.id, o.market, o.selection, o.odds]
+    );
+  }
+  const rows = await pool.query('SELECT * FROM match_odds WHERE match_id = $1', [req.params.id]);
+  res.json(rows.rows);
 });
 
 router.get('/matches/:id/odds', async (req, res) => {
@@ -217,15 +247,85 @@ router.get('/matches/:id/odds', async (req, res) => {
 
 // ─── Team extended ───────────────────────────────────────────────
 router.put('/teams/:id/details', async (req, res) => {
-  const { strength, colorPrimary, colorSecondary, league } = req.body;
+  const {
+    strength, colorPrimary, colorSecondary, league,
+    starRating, attackRating, midfieldRating, defenseRating, name, shortName,
+  } = req.body;
   const result = await pool.query(
-    `UPDATE teams SET strength = COALESCE($1, strength), color_primary = COALESCE($2, color_primary),
-     color_secondary = COALESCE($3, color_secondary), league = COALESCE($4, league), updated_at = NOW()
-     WHERE id = $5 RETURNING *`,
-    [strength, colorPrimary, colorSecondary, league, req.params.id]
+    `UPDATE teams SET
+       name = COALESCE($1, name),
+       short_name = COALESCE($2, short_name),
+       strength = COALESCE($3, strength),
+       star_rating = COALESCE($4, star_rating),
+       attack_rating = COALESCE($5, attack_rating),
+       midfield_rating = COALESCE($6, midfield_rating),
+       defense_rating = COALESCE($7, defense_rating),
+       color_primary = COALESCE($8, color_primary),
+       color_secondary = COALESCE($9, color_secondary),
+       league = COALESCE($10, league),
+       updated_at = NOW()
+     WHERE id = $11 RETURNING *`,
+    [name, shortName, strength, starRating, attackRating, midfieldRating, defenseRating, colorPrimary, colorSecondary, league, req.params.id]
   );
   await auditLog(req.user.id, 'team_details_updated', 'team', req.params.id, req.body, req.ip);
   res.json(result.rows[0]);
+});
+
+router.get('/teams/:id/players', async (req, res) => {
+  const result = await pool.query(
+    'SELECT * FROM players WHERE team_id = $1 ORDER BY position, shirt_number',
+    [req.params.id]
+  );
+  res.json(result.rows);
+});
+
+router.post('/teams/:id/players', async (req, res) => {
+  const { name, position, shirtNumber, starRating, isStriker } = req.body;
+  const result = await pool.query(
+    `INSERT INTO players (team_id, name, position, shirt_number, star_rating, is_striker)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [req.params.id, name, position || 'MID', shirtNumber || null, starRating || 3, Boolean(isStriker)]
+  );
+  await auditLog(req.user.id, 'player_created', 'player', result.rows[0].id, req.body, req.ip);
+  res.status(201).json(result.rows[0]);
+});
+
+router.put('/players/:id', async (req, res) => {
+  const { name, position, shirtNumber, starRating, isStriker, isActive } = req.body;
+  const result = await pool.query(
+    `UPDATE players SET name = COALESCE($1, name), position = COALESCE($2, position),
+     shirt_number = COALESCE($3, shirt_number), star_rating = COALESCE($4, star_rating),
+     is_striker = COALESCE($5, is_striker), is_active = COALESCE($6, is_active), updated_at = NOW()
+     WHERE id = $7 RETURNING *`,
+    [name, position, shirtNumber, starRating, isStriker, isActive, req.params.id]
+  );
+  res.json(result.rows[0]);
+});
+
+router.delete('/players/:id', async (req, res) => {
+  await pool.query('DELETE FROM players WHERE id = $1', [req.params.id]);
+  res.json({ message: 'Player deleted' });
+});
+
+router.get('/fixtures', async (req, res) => {
+  const { league } = req.query;
+  const params = [];
+  let filter = '';
+  if (league) {
+    params.push(league);
+    filter = `AND l.name = $${params.length}`;
+  }
+  const result = await pool.query(
+    `SELECT sf.*, ht.name AS home_name, at.name AS away_name, l.name AS league_name
+     FROM season_fixtures sf
+     JOIN teams ht ON sf.home_team_id = ht.id
+     JOIN teams at ON sf.away_team_id = at.id
+     LEFT JOIN leagues l ON sf.league_id = l.id
+     WHERE 1=1 ${filter}
+     ORDER BY sf.scheduled_order ASC LIMIT 200`,
+    params
+  );
+  res.json(result.rows);
 });
 
 // ─── Users extended ──────────────────────────────────────────────

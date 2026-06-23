@@ -23,6 +23,9 @@ export async function runMigrations() {
 
     const adminSchema = fs.readFileSync(path.join(__dirname, 'schema-admin.sql'), 'utf8');
     await client.query(adminSchema);
+
+    const playersSchema = fs.readFileSync(path.join(__dirname, 'schema-players.sql'), 'utf8');
+    await client.query(playersSchema);
     console.log('✅ Database schema ready');
   } catch (err) {
     if (err.code === '53100') {

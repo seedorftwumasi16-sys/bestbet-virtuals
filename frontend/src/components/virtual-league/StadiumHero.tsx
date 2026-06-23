@@ -112,7 +112,7 @@ export default function StadiumHero() {
               </p>
               <div className="flex flex-wrap gap-2 mt-4">
                 <span className="px-3 py-1 rounded-full bg-primary-500/10 border border-primary-500/30 text-primary-500 text-xs font-bold">LIVE 24/7</span>
-                <span className="px-3 py-1 rounded-full bg-accent-500/10 border border-accent-500/30 text-accent-500 text-xs font-bold">43 CLUBS</span>
+                <span className="px-3 py-1 rounded-full bg-accent-500/10 border border-accent-500/30 text-accent-500 text-xs font-bold">30 CLUBS</span>
                 <span className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-gray-300 text-xs font-bold">5 LEAGUES</span>
               </div>
             </motion.div>
