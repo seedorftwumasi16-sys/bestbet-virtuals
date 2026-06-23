@@ -15,6 +15,26 @@ let io = null;
 let matchCycleTimer = null;
 let liveSimulationTimers = {};
 let processingScheduled = false;
+const liveStateOverrides = new Map();
+
+export function getSchedulerIo() {
+  return io;
+}
+
+export function stopLiveSimulation(matchId) {
+  if (liveSimulationTimers[matchId]) {
+    clearInterval(liveSimulationTimers[matchId]);
+    delete liveSimulationTimers[matchId];
+  }
+}
+
+export function setLiveOverride(matchId, data) {
+  liveStateOverrides.set(matchId, { ...liveStateOverrides.get(matchId), ...data });
+}
+
+export function clearLiveOverride(matchId) {
+  liveStateOverrides.delete(matchId);
+}
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -95,12 +115,25 @@ export async function processScheduledMatches() {
     if (paused === 'true') return;
 
     const res = await pool.query(
-      `SELECT id FROM matches WHERE status = 'scheduled' AND scheduled_at <= NOW() AND is_paused = false`
+      `SELECT id, preset_events, preset_home_score, preset_away_score FROM matches
+       WHERE status = 'scheduled' AND scheduled_at <= NOW() AND is_paused = false`
     );
 
     for (const row of res.rows) {
       if (liveSimulationTimers[row.id]) continue;
-      await runLiveSimulation(row.id);
+      let presetEvents = row.preset_events;
+      if (typeof presetEvents === 'string') {
+        try { presetEvents = JSON.parse(presetEvents); } catch { presetEvents = []; }
+      }
+      const hasPreset = Array.isArray(presetEvents) && presetEvents.length > 0;
+      const manualData = hasPreset
+        ? {
+            home_score: row.preset_home_score ?? presetEvents.filter((e) => e.team === 'home').length,
+            away_score: row.preset_away_score ?? presetEvents.filter((e) => e.team === 'away').length,
+            goal_times: presetEvents,
+          }
+        : null;
+      await runLiveSimulation(row.id, manualData);
     }
   } catch (err) {
     console.error('Scheduler error:', err.message);
@@ -161,6 +194,11 @@ export async function runLiveSimulation(matchId, manualData = null) {
 
   const tick = async () => {
     try {
+      const pausedRow = await pool.query('SELECT is_paused, admin_commentary FROM matches WHERE id = $1', [matchId]);
+      if (pausedRow.rows[0]?.is_paused) return;
+
+      const override = liveStateOverrides.get(matchId) || {};
+
       if (phase === 'walkout') {
         walkoutTicks += 1;
         if (walkoutTicks < 2) {
@@ -187,8 +225,15 @@ export async function runLiveSimulation(matchId, manualData = null) {
         return;
       }
 
-      currentMinute += 1;
+      if (override.minute !== undefined) {
+        currentMinute = override.minute;
+      } else {
+        currentMinute += 1;
+      }
       if (currentMinute > 90) currentMinute = 90;
+
+      if (override.homeScore !== undefined) liveHomeScore = override.homeScore;
+      if (override.awayScore !== undefined) liveAwayScore = override.awayScore;
 
       if (Math.random() < 0.35) {
         const shooter = Math.random() < possessionHome / 100 ? 'home' : 'away';
@@ -280,6 +325,9 @@ export async function runLiveSimulation(matchId, manualData = null) {
         ]
       );
 
+      const adminCommentary = pausedRow.rows[0]?.admin_commentary;
+      const commentaryText = adminCommentary || commentaryLines.join(' | ');
+
       if (io && !halftimePause) {
         io.emit('match:update', {
           matchId,
@@ -288,7 +336,7 @@ export async function runLiveSimulation(matchId, manualData = null) {
           homeScore: liveHomeScore,
           awayScore: liveAwayScore,
           events: minuteEvents,
-          commentary: commentaryLines.join(' | '),
+          commentary: commentaryText,
           attackDirection,
           possessionHome,
           possessionAway: 100 - possessionHome,
@@ -299,6 +347,7 @@ export async function runLiveSimulation(matchId, manualData = null) {
       if (currentMinute >= 90 && !halftimePause) {
         clearInterval(liveSimulationTimers[matchId]);
         delete liveSimulationTimers[matchId];
+        clearLiveOverride(matchId);
         await finalizeMatch(matchId, match, liveHomeScore, liveAwayScore, events, possessionHome, liveStats);
       }
     } catch (err) {
@@ -425,10 +474,8 @@ async function finalizeMatch(matchId, match, homeScore, awayScore, events, posse
 }
 
 export async function forceFinishMatch(matchId, manualData) {
-  if (liveSimulationTimers[matchId]) {
-    clearInterval(liveSimulationTimers[matchId]);
-    delete liveSimulationTimers[matchId];
-  }
+  stopLiveSimulation(matchId);
+  clearLiveOverride(matchId);
   const matchRes = await pool.query(
     `SELECT m.*, ht.name as home_name, at.name as away_name
      FROM matches m JOIN teams ht ON m.home_team_id = ht.id JOIN teams at ON m.away_team_id = at.id

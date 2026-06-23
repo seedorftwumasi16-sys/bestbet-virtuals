@@ -17,6 +17,7 @@ import {
 import { settleBetsForMatch } from '../services/bettingService.js';
 import { forceFinishMatch } from '../services/schedulerService.js';
 import { generateMatchOdds } from '../services/oddsService.js';
+import { buildPresetGoalEvents, buildPresetEvents } from '../services/liveMatchService.js';
 import superAdminRoutes from './adminSuper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -147,8 +148,16 @@ router.post('/teams/:id/logo', upload.single('logo'), async (req, res) => {
 
 // Matches management
 router.post('/matches', async (req, res) => {
-  const { homeTeamId, awayTeamId, scheduledAt } = req.body;
-  const match = await createScheduledMatch(homeTeamId, awayTeamId, new Date(scheduledAt));
+  const { homeTeamId, awayTeamId, scheduledAt, presetHomeScore, presetAwayScore, goals, events } = req.body;
+  const builtEvents = events?.length ? buildPresetEvents(events) : buildPresetGoalEvents(goals || []);
+  const preset = builtEvents.length
+    ? {
+        homeScore: presetHomeScore ?? builtEvents.filter((e) => e.team === 'home' && e.type === 'goal').length,
+        awayScore: presetAwayScore ?? builtEvents.filter((e) => e.team === 'away' && e.type === 'goal').length,
+        events: builtEvents,
+      }
+    : null;
+  const match = await createScheduledMatch(homeTeamId, awayTeamId, new Date(scheduledAt), null, null, null, preset);
   await auditLog(req.user.id, 'match_scheduled', 'match', match.id, req.body, req.ip);
   res.status(201).json(match);
 });
@@ -210,6 +219,8 @@ router.put('/league-table', async (req, res) => {
       [e.teamId, e.played, e.won, e.drawn, e.lost, e.goalsFor, e.goalsAgainst, e.points, e.position]
     );
   }
+  const { emitStatsUpdate } = await import('../services/liveMatchService.js');
+  emitStatsUpdate();
   res.json({ message: 'League table updated' });
 });
 

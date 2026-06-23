@@ -9,10 +9,15 @@ export default function BookingSection() {
   const [search, setSearch] = useState('');
   const [detail, setDetail] = useState<{ bet: Record<string, unknown>; selections: Array<Record<string, unknown>> } | null>(null);
   const [editCode, setEditCode] = useState('');
+  const [editExpiry, setEditExpiry] = useState('');
+  const [savedSlips, setSavedSlips] = useState<Array<Record<string, unknown>>>([]);
+  const [preCode, setPreCode] = useState('');
+  const [preStake, setPreStake] = useState('10');
 
   const load = () => {
     const q = search ? `?search=${encodeURIComponent(search)}` : '';
     api<Array<Record<string, unknown>>>(`/admin/booking-codes${q}`).then(setCodes).catch(console.error);
+    api<Array<Record<string, unknown>>>(`/admin/saved-betslips${q}`).then(setSavedSlips).catch(console.error);
   };
 
   useEffect(() => { load(); }, []);
@@ -21,13 +26,15 @@ export default function BookingSection() {
     const data = await api<typeof detail>(`/admin/bets/booking/${code}`);
     setDetail(data);
     setEditCode(String(data?.bet?.booking_code || ''));
+    const exp = data?.bet?.booking_code_expires_at;
+    setEditExpiry(exp ? new Date(String(exp)).toISOString().slice(0, 16) : '');
   };
 
   const saveBookingCode = async () => {
     if (!detail?.bet?.id) return;
     await api(`/admin/bets/${detail.bet.id}/booking-code`, {
       method: 'PUT',
-      body: JSON.stringify({ bookingCode: editCode }),
+      body: JSON.stringify({ bookingCode: editCode, expiresAt: editExpiry ? new Date(editExpiry).toISOString() : null }),
     });
     load();
     viewCode(editCode);
@@ -42,6 +49,34 @@ export default function BookingSection() {
 
   return (
     <div className="space-y-4">
+      <AdminCard title="Pre-Create Booking Code">
+        <p className="text-xs text-gray-500 mb-3">Generate a shareable SB###### code users can load on the betslip page.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Field label="Custom code (optional)">
+            <input value={preCode} onChange={(e) => setPreCode(e.target.value.toUpperCase())} placeholder="SB123456" className="input-field font-mono min-h-[44px]" maxLength={12} />
+          </Field>
+          <Field label="Default stake (GHS)">
+            <input type="number" value={preStake} onChange={(e) => setPreStake(e.target.value)} className="input-field min-h-[44px]" />
+          </Field>
+          <div className="flex items-end">
+            <button
+              onClick={async () => {
+                const slip = await api<{ code: string }>('/admin/saved-betslips', {
+                  method: 'POST',
+                  body: JSON.stringify({ code: preCode || undefined, selections: [], stake: parseFloat(preStake) || 10 }),
+                });
+                setPreCode('');
+                load();
+                alert(`Created: ${slip.code}`);
+              }}
+              className="btn-primary w-full min-h-[44px]"
+            >
+              Create Code
+            </button>
+          </div>
+        </div>
+      </AdminCard>
+
       <AdminCard title="Search Booking Codes">
         <div className="flex gap-3">
           <input
@@ -87,7 +122,7 @@ export default function BookingSection() {
               </div>
             ))}
           </div>
-          <div className="mt-4 flex gap-3 items-end">
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
             <Field label="Edit booking code">
               <input
                 value={editCode}
@@ -96,10 +131,31 @@ export default function BookingSection() {
                 maxLength={20}
               />
             </Field>
+            <Field label="Expiry date/time">
+              <input
+                type="datetime-local"
+                value={editExpiry}
+                onChange={(e) => setEditExpiry(e.target.value)}
+                className="input-field"
+              />
+            </Field>
             <button onClick={saveBookingCode} className="btn-primary">Save Code</button>
           </div>
         </AdminCard>
       )}
+
+      <AdminCard title="Saved Bet Slips (Pre-place codes)">
+        <AdminTable headers={['Code', 'Stake', 'Expires', 'Created']}>
+          {savedSlips.map((s) => (
+            <tr key={String(s.id)} className="border-b border-dark-700">
+              <td className="py-3 pr-4 font-mono text-primary-500">{String(s.code)}</td>
+              <td className="pr-4">{formatCurrency(Number(s.stake || 0))}</td>
+              <td className="pr-4 text-xs text-gray-400">{s.expires_at ? new Date(String(s.expires_at)).toLocaleString() : '—'}</td>
+              <td className="text-xs text-gray-500">{new Date(String(s.created_at)).toLocaleDateString()}</td>
+            </tr>
+          ))}
+        </AdminTable>
+      </AdminCard>
     </div>
   );
 }

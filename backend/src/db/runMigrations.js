@@ -32,6 +32,9 @@ export async function runMigrations() {
 
     const winnersSchema = fs.readFileSync(path.join(__dirname, 'schema-winners.sql'), 'utf8');
     await client.query(winnersSchema);
+
+    const liveAdminSchema = fs.readFileSync(path.join(__dirname, 'schema-live-admin.sql'), 'utf8');
+    await client.query(liveAdminSchema);
     console.log('✅ Database schema ready');
   } catch (err) {
     if (err.code === '53100') {

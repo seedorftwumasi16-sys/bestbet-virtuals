@@ -17,6 +17,23 @@ import {
   deleteWinner,
   emitWinnersUpdate,
 } from '../services/winnersService.js';
+import {
+  getLiveMatchAdminState,
+  updateLiveMatchFields,
+  addGoalEvent,
+  deleteGoalEvent,
+  startMatchPlayback,
+  endMatchNow,
+  getMatchHistory,
+  saveMatchPreset,
+  addMatchEvent,
+  deleteMatchEvent,
+  forceFullTimeResult,
+  setMatchStatus,
+  emitStatsUpdate,
+  buildPresetEvents,
+} from '../services/liveMatchService.js';
+import { saveBetslip } from '../services/betslipService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads');
@@ -159,6 +176,15 @@ router.get('/matches', async (req, res) => {
   res.json(result.rows);
 });
 
+router.get('/matches/history/list', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit || '100', 10);
+    res.json(await getMatchHistory(limit));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.put('/matches/:id', async (req, res) => {
   const { scheduledAt, leagueId, seasonId, tournamentId, matchNumber } = req.body;
   const result = await pool.query(
@@ -208,7 +234,10 @@ router.delete('/matches/:id', async (req, res) => {
 router.put('/matches/:id/restart', async (req, res) => {
   await pool.query(
     `UPDATE matches SET status = 'scheduled', home_score = 0, away_score = 0, is_paused = false,
-     started_at = NULL, finished_at = NULL, updated_at = NOW() WHERE id = $1`,
+     started_at = NULL, finished_at = NULL, live_minute = 0, admin_commentary = NULL,
+     possession_home = 50, possession_away = 50, shots_home = 0, shots_away = 0,
+     corners_home = 0, corners_away = 0, yellow_cards_home = 0, yellow_cards_away = 0,
+     red_cards_home = 0, red_cards_away = 0, updated_at = NOW() WHERE id = $1`,
     [req.params.id]
   );
   await pool.query('DELETE FROM match_events WHERE match_id = $1', [req.params.id]);
@@ -258,6 +287,131 @@ router.get('/matches/:id/odds', async (req, res) => {
   res.json(result.rows);
 });
 
+router.get('/matches/:id/live', async (req, res) => {
+  try {
+    res.json(await getLiveMatchAdminState(req.params.id));
+  } catch (err) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
+router.put('/matches/:id/live', async (req, res) => {
+  try {
+    const data = await updateLiveMatchFields(req.params.id, req.body);
+    await auditLog(req.user.id, 'live_match_updated', 'match', req.params.id, req.body, req.ip);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/matches/:id/goals', async (req, res) => {
+  try {
+    const data = await addGoalEvent(req.params.id, req.body);
+    await auditLog(req.user.id, 'goal_added', 'match', req.params.id, req.body, req.ip);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/matches/:id/goals/:eventId', async (req, res) => {
+  try {
+    const data = await deleteGoalEvent(req.params.id, req.params.eventId);
+    await auditLog(req.user.id, 'goal_deleted', 'match', req.params.id, { eventId: req.params.eventId }, req.ip);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/matches/:id/start', async (req, res) => {
+  try {
+    const data = await startMatchPlayback(req.params.id);
+    await auditLog(req.user.id, 'match_started', 'match', req.params.id, {}, req.ip);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/matches/:id/end', async (req, res) => {
+  try {
+    const data = await endMatchNow(req.params.id);
+    await auditLog(req.user.id, 'match_ended', 'match', req.params.id, {}, req.ip);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/matches/:id/preset', async (req, res) => {
+  try {
+    const data = await saveMatchPreset(req.params.id, req.body);
+    await auditLog(req.user.id, 'match_preset_saved', 'match', req.params.id, req.body, req.ip);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/matches/:id/events', async (req, res) => {
+  try {
+    const data = await addMatchEvent(req.params.id, req.body);
+    await auditLog(req.user.id, 'match_event_added', 'match', req.params.id, req.body, req.ip);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/matches/:id/events/:eventId', async (req, res) => {
+  try {
+    const data = await deleteMatchEvent(req.params.id, req.params.eventId);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/matches/:id/force-result', async (req, res) => {
+  try {
+    const { homeScore, awayScore } = req.body;
+    const data = await forceFullTimeResult(req.params.id, { homeScore, awayScore });
+    emitStatsUpdate();
+    await auditLog(req.user.id, 'match_force_result', 'match', req.params.id, req.body, req.ip);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/matches/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const data = await setMatchStatus(req.params.id, status);
+    await auditLog(req.user.id, 'match_status_changed', 'match', req.params.id, { status }, req.ip);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ─── All players (goal scorers) ──────────────────────────────────
+router.get('/players', async (req, res) => {
+  const { teamId } = req.query;
+  let query = `SELECT p.*, t.name AS team_name, t.short_name AS team_short
+               FROM players p JOIN teams t ON p.team_id = t.id WHERE p.is_active = TRUE`;
+  const params = [];
+  if (teamId) {
+    params.push(teamId);
+    query += ` AND p.team_id = $${params.length}`;
+  }
+  query += ' ORDER BY t.name, p.position, p.shirt_number';
+  const result = await pool.query(query, params);
+  res.json(result.rows);
+});
+
 // ─── Team extended ───────────────────────────────────────────────
 router.put('/teams/:id/details', async (req, res) => {
   const {
@@ -304,14 +458,16 @@ router.post('/teams/:id/players', async (req, res) => {
 });
 
 router.put('/players/:id', async (req, res) => {
-  const { name, position, shirtNumber, starRating, isStriker, isActive } = req.body;
+  const { name, position, shirtNumber, starRating, isStriker, isActive, goalsSeason } = req.body;
   const result = await pool.query(
     `UPDATE players SET name = COALESCE($1, name), position = COALESCE($2, position),
      shirt_number = COALESCE($3, shirt_number), star_rating = COALESCE($4, star_rating),
-     is_striker = COALESCE($5, is_striker), is_active = COALESCE($6, is_active), updated_at = NOW()
-     WHERE id = $7 RETURNING *`,
-    [name, position, shirtNumber, starRating, isStriker, isActive, req.params.id]
+     is_striker = COALESCE($5, is_striker), is_active = COALESCE($6, is_active),
+     goals_season = COALESCE($7, goals_season), updated_at = NOW()
+     WHERE id = $8 RETURNING *`,
+    [name, position, shirtNumber, starRating, isStriker, isActive, goalsSeason, req.params.id]
   );
+  emitStatsUpdate();
   res.json(result.rows[0]);
 });
 
@@ -372,7 +528,7 @@ router.get('/booking-codes', async (req, res) => {
 });
 
 router.put('/bets/:id/booking-code', requireSuperAdmin, async (req, res) => {
-  const { bookingCode } = req.body;
+  const { bookingCode, expiresAt } = req.body;
   const code = String(bookingCode || '').trim().toUpperCase();
   if (code.length < 4 || code.length > 20) {
     return res.status(400).json({ error: 'Booking code must be 4–20 characters' });
@@ -380,11 +536,57 @@ router.put('/bets/:id/booking-code', requireSuperAdmin, async (req, res) => {
   const clash = await pool.query('SELECT id FROM bets WHERE booking_code = $1 AND id != $2', [code, req.params.id]);
   if (clash.rows.length) return res.status(409).json({ error: 'Booking code already in use' });
   const result = await pool.query(
-    'UPDATE bets SET booking_code = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
-    [code, req.params.id]
+    'UPDATE bets SET booking_code = $1, booking_code_expires_at = $2, updated_at = NOW() WHERE id = $3 RETURNING *',
+    [code, expiresAt || null, req.params.id]
   );
   if (!result.rows[0]) return res.status(404).json({ error: 'Bet not found' });
-  await auditLog(req.user.id, 'booking_code_updated', 'bet', req.params.id, { bookingCode: code }, req.ip);
+  await auditLog(req.user.id, 'booking_code_updated', 'bet', req.params.id, { bookingCode: code, expiresAt }, req.ip);
+  res.json(result.rows[0]);
+});
+
+router.get('/saved-betslips', async (req, res) => {
+  const { search } = req.query;
+  let query = 'SELECT * FROM saved_betslips';
+  const params = [];
+  if (search) {
+    params.push(`%${search}%`);
+    query += ` WHERE code ILIKE $1`;
+  }
+  query += ' ORDER BY created_at DESC LIMIT 100';
+  const result = await pool.query(query, params);
+  res.json(result.rows);
+});
+
+router.post('/saved-betslips', async (req, res) => {
+  try {
+    const { code, selections, stake, expiresAt } = req.body;
+    const slip = await saveBetslip(selections || [], stake || 10, code || null);
+    if (expiresAt) {
+      await pool.query('UPDATE saved_betslips SET expires_at = $1 WHERE code = $2', [expiresAt, slip.code]);
+    }
+    await auditLog(req.user.id, 'betslip_precreate', 'saved_betslip', slip.code, req.body, req.ip);
+    res.status(201).json(slip);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/top-scorers', async (req, res) => {
+  const result = await pool.query(
+    `SELECT p.id, p.name, p.goals_season, p.star_rating, t.name AS team_name, t.short_name
+     FROM players p JOIN teams t ON p.team_id = t.id
+     WHERE p.is_active = TRUE ORDER BY p.goals_season DESC, p.star_rating DESC LIMIT 50`
+  );
+  res.json(result.rows);
+});
+
+router.put('/saved-betslips/:id', async (req, res) => {
+  const { expiresAt, code } = req.body;
+  const result = await pool.query(
+    'UPDATE saved_betslips SET expires_at = COALESCE($1, expires_at), code = COALESCE($2, code) WHERE id = $3 RETURNING *',
+    [expiresAt || null, code ? String(code).toUpperCase() : null, req.params.id]
+  );
+  if (!result.rows[0]) return res.status(404).json({ error: 'Not found' });
   res.json(result.rows[0]);
 });
 

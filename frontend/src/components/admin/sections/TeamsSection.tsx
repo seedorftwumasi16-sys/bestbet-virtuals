@@ -51,6 +51,8 @@ export default function TeamsSection() {
   });
   const [players, setPlayers] = useState<Player[]>([]);
   const [newPlayer, setNewPlayer] = useState({ name: '', position: 'MID', shirtNumber: 1, starRating: 3 });
+  const [editPlayerId, setEditPlayerId] = useState<string | null>(null);
+  const [editPlayer, setEditPlayer] = useState({ name: '', position: 'MID', shirtNumber: 1, starRating: 3, isStriker: false });
 
   const load = () => api<Team[]>('/admin/teams').then(setTeams).catch(console.error);
 
@@ -95,6 +97,19 @@ export default function TeamsSection() {
     await api(`/admin/teams/${teamId}/players`, { method: 'POST', body: JSON.stringify(newPlayer) });
     setNewPlayer({ name: '', position: 'MID', shirtNumber: players.length + 1, starRating: 3 });
     loadPlayers(teamId);
+  };
+
+  const savePlayer = async () => {
+    if (!editPlayerId || !editId) return;
+    await api(`/admin/players/${editPlayerId}`, { method: 'PUT', body: JSON.stringify(editPlayer) });
+    setEditPlayerId(null);
+    loadPlayers(editId);
+  };
+
+  const deletePlayer = async (playerId: string) => {
+    if (!confirm('Delete player?')) return;
+    await api(`/admin/players/${playerId}`, { method: 'DELETE' });
+    if (editId) loadPlayers(editId);
   };
 
   return (
@@ -186,11 +201,27 @@ export default function TeamsSection() {
               <input placeholder="Pos" value={newPlayer.position} onChange={(e) => setNewPlayer({ ...newPlayer, position: e.target.value })} className="input-field w-16" />
               <button onClick={() => addPlayer(editId)} className="btn-secondary">Add Player</button>
             </div>
-            <div className="max-h-48 overflow-y-auto text-xs space-y-1">
+            <div className="max-h-64 overflow-y-auto text-xs space-y-1">
               {players.map((p) => (
-                <div key={p.id} className="flex justify-between text-gray-300 border-b border-dark-700 py-1">
-                  <span>#{p.shirt_number} {p.name} ({p.position})</span>
-                  <span className="text-accent-500">{stars(p.star_rating)}</span>
+                <div key={p.id} className="flex justify-between items-center text-gray-300 border-b border-dark-700 py-2 gap-2">
+                  {editPlayerId === p.id ? (
+                    <div className="flex flex-wrap gap-2 flex-1">
+                      <input value={editPlayer.name} onChange={(e) => setEditPlayer({ ...editPlayer, name: e.target.value })} className="input-field flex-1 min-w-[100px]" />
+                      <input value={editPlayer.position} onChange={(e) => setEditPlayer({ ...editPlayer, position: e.target.value })} className="input-field w-14" />
+                      <input type="number" value={editPlayer.starRating} onChange={(e) => setEditPlayer({ ...editPlayer, starRating: parseInt(e.target.value) })} className="input-field w-14" />
+                      <button onClick={savePlayer} className="text-primary-500 font-bold">Save</button>
+                      <button onClick={() => setEditPlayerId(null)} className="text-gray-500">Cancel</button>
+                    </div>
+                  ) : (
+                    <>
+                      <span>#{p.shirt_number} {p.name} ({p.position})</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-accent-500">{stars(p.star_rating)}</span>
+                        <ActionBtn onClick={() => { setEditPlayerId(p.id); setEditPlayer({ name: p.name, position: p.position, shirtNumber: p.shirt_number, starRating: p.star_rating, isStriker: p.is_striker }); }}>Edit</ActionBtn>
+                        <ActionBtn variant="danger" onClick={() => deletePlayer(p.id)}>Del</ActionBtn>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>

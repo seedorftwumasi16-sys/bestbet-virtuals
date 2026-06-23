@@ -189,11 +189,15 @@ export function MatchesDataProvider({
     socket.on('match:live', onLive);
     socket.on('match:finished', onFinished);
     socket.on('match:update', onUpdate);
+    socket.on('league:updated', onLive);
+    socket.on('stats:updated', onLive);
 
     return () => {
       socket.off('match:live', onLive);
       socket.off('match:finished', onFinished);
       socket.off('match:update', onUpdate);
+      socket.off('league:updated', onLive);
+      socket.off('stats:updated', onLive);
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
     };
   }, [scheduleRefresh]);

@@ -9,7 +9,7 @@ function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-export async function createScheduledMatch(homeTeamId, awayTeamId, scheduledAt, leagueName = null, leagueId = null, fixtureId = null) {
+export async function createScheduledMatch(homeTeamId, awayTeamId, scheduledAt, leagueName = null, leagueId = null, fixtureId = null, preset = null) {
   const teams = await pool.query(
     `SELECT id, strength, attack_rating, midfield_rating, defense_rating, league FROM teams WHERE id IN ($1, $2)`,
     [homeTeamId, awayTeamId]
@@ -26,10 +26,16 @@ export async function createScheduledMatch(homeTeamId, awayTeamId, scheduledAt, 
     resolvedLeagueId = lg.rows[0]?.id || null;
   }
 
+  const presetEvents = preset?.events ? JSON.stringify(preset.events) : '[]';
+  const presetHome = preset?.homeScore ?? null;
+  const presetAway = preset?.awayScore ?? null;
+  const isManual = Boolean(preset?.events?.length);
+
   const res = await pool.query(
-    `INSERT INTO matches (home_team_id, away_team_id, scheduled_at, status, league_id)
-     VALUES ($1, $2, $3, 'scheduled', $4) RETURNING *`,
-    [homeTeamId, awayTeamId, scheduledAt, resolvedLeagueId]
+    `INSERT INTO matches (home_team_id, away_team_id, scheduled_at, status, league_id,
+      preset_home_score, preset_away_score, preset_events, is_manual)
+     VALUES ($1, $2, $3, 'scheduled', $4, $5, $6, $7, $8) RETURNING *`,
+    [homeTeamId, awayTeamId, scheduledAt, resolvedLeagueId, presetHome, presetAway, presetEvents, isManual]
   );
   const match = res.rows[0];
   const odds = generateMatchOdds(homeStr, awayStr);

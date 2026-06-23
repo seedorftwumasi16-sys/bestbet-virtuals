@@ -44,7 +44,7 @@ export function ActionBtn({
     success: 'text-accent-500 hover:text-accent-400',
   };
   return (
-    <button onClick={onClick} className={clsx('text-xs font-semibold mr-2', colors[variant])}>
+    <button onClick={onClick} className={clsx('text-xs font-semibold mr-2 min-h-[44px] min-w-[44px] px-2 py-2 touch-manipulation', colors[variant])}>
       {children}
     </button>
   );

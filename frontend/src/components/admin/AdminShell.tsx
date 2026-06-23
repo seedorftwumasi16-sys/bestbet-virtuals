@@ -17,12 +17,14 @@ import BookingSection from './sections/BookingSection';
 import ContentSection from './sections/ContentSection';
 import WinnersSection from './sections/WinnersSection';
 import SecuritySection from './sections/SecuritySection';
+import LiveMatchEditorSection from './sections/LiveMatchEditorSection';
 import SettingsSection from './sections/SettingsSection';
 
 const STAFF_ROLES = ['admin', 'super_admin', 'manager'];
 
 export type AdminSection =
   | 'analytics'
+  | 'live-editor'
   | 'matches'
   | 'teams'
   | 'leagues'
@@ -37,6 +39,7 @@ export type AdminSection =
 
 const NAV: { id: AdminSection; label: string; icon: string; roles?: string[] }[] = [
   { id: 'analytics', label: 'Analytics', icon: '📊' },
+  { id: 'live-editor', label: 'Live Match Editor', icon: '🎮' },
   { id: 'matches', label: 'Matches', icon: '⚽' },
   { id: 'teams', label: 'Teams', icon: '🏟️' },
   { id: 'leagues', label: 'Leagues', icon: '🏆' },
@@ -148,6 +151,7 @@ export default function AdminShell() {
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {section === 'analytics' && <AnalyticsSection />}
+          {section === 'live-editor' && <LiveMatchEditorSection />}
           {section === 'matches' && <MatchesSection />}
           {section === 'teams' && <TeamsSection />}
           {section === 'leagues' && <LeagueSection />}
