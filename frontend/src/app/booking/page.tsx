@@ -4,76 +4,83 @@ import { useState } from 'react';
 import { api, formatOdds, MARKET_LABELS, SELECTION_LABELS } from '@/lib/api';
 import { useBetSlip } from '@/context/BetSlipContext';
 import { useRouter } from 'next/navigation';
+import BetTicketCard from '@/components/bets/BetTicketCard';
+import { BetRecord } from '@/lib/bets';
 
 export default function BookingPage() {
   const [code, setCode] = useState('');
-  const [result, setResult] = useState<{
-    bet: { booking_code: string; stake: number; total_odds: number; potential_win: number; status: string };
-    selections: Array<{ market: string; selection: string; odds: number; home_team: string; away_team: string; status: string }>;
-  } | null>(null);
+  const [bet, setBet] = useState<BetRecord | null>(null);
+  const [slip, setSlip] = useState<{ code: string; stake: number; selections: Array<Record<string, unknown>> } | null>(null);
   const [error, setError] = useState('');
-  const { loadFromBooking } = useBetSlip();
+  const { loadFromBooking, setStake } = useBetSlip();
   const router = useRouter();
 
   const search = async () => {
     setError('');
-    setResult(null);
+    setBet(null);
+    setSlip(null);
     try {
-      const data = await api<typeof result>(`/bets/booking/${code}`);
-      setResult(data);
+      const data = await api<{ type: string; bet?: BetRecord; selections?: BetRecord['selections']; code?: string; stake?: number }>(
+        `/bets/booking/${code}`
+      );
+      if (data.type === 'slip') {
+        setSlip({ code: data.code || code, stake: data.stake || 10, selections: data.selections as Array<Record<string, unknown>> });
+      } else if (data.bet) {
+        setBet({ ...data.bet, selections: data.selections || data.bet.selections });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Not found');
     }
   };
 
   const loadToSlip = () => {
-    if (!result) return;
+    if (!slip) return;
     loadFromBooking(
-      result.selections.map((s) => ({
-        matchId: '',
-        market: s.market,
-        selection: s.selection,
-        odds: s.odds,
-        homeTeam: s.home_team,
-        awayTeam: s.away_team,
+      slip.selections.map((s) => ({
+        matchId: String(s.matchId || ''),
+        market: String(s.market),
+        selection: String(s.selection),
+        odds: Number(s.odds),
+        homeTeam: String(s.homeTeam || s.home_team || 'Home'),
+        awayTeam: String(s.awayTeam || s.away_team || 'Away'),
       }))
     );
+    setStake(slip.stake);
     router.push('/');
   };
 
   return (
-    <div className="max-w-md mx-auto px-4 py-6">
+    <div className="max-w-lg mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold mb-2">SkyBet Booking Code</h1>
-      <p className="text-gray-500 text-sm mb-6">Load shared bets from SkyBet booking codes</p>
+      <p className="text-gray-500 text-sm mb-6">Search placed bets or load shared bet slips</p>
       <div className="card space-y-4">
         <div>
           <label className="text-sm text-gray-400">Enter Booking Code</label>
           <input
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="ABC12345"
-            className="input-field mt-1 font-mono text-lg"
+            placeholder="SBXXXXXXXX"
+            className="input-field mt-1 font-mono text-lg tracking-widest"
           />
         </div>
-        <button onClick={search} className="btn-primary w-full py-3">Search</button>
+        <button type="button" onClick={search} className="btn-primary w-full py-3 min-h-[44px]">Search</button>
         {error && <p className="text-red-400 text-sm">{error}</p>}
 
-        {result && (
+        {bet && <BetTicketCard bet={bet} expanded />}
+
+        {slip && (
           <div className="border-t border-dark-600 pt-4 space-y-3">
-            <div className="flex justify-between">
-              <span className="font-mono text-primary-500 font-bold">{result.bet.booking_code}</span>
-              <span className="capitalize text-sm">{result.bet.status}</span>
-            </div>
-            {result.selections.map((s, i) => (
+            <p className="text-xs text-gray-500 uppercase">Saved Bet Slip — not yet placed</p>
+            <p className="font-mono text-accent-400 font-black text-xl">{slip.code}</p>
+            {slip.selections.map((s, i) => (
               <div key={i} className="bg-dark-700 rounded-lg p-3 text-sm">
-                <p className="font-medium">{s.home_team} vs {s.away_team}</p>
+                <p className="font-medium">{String(s.homeTeam || s.home_team)} vs {String(s.awayTeam || s.away_team)}</p>
                 <p className="text-gray-400 text-xs">
-                  {MARKET_LABELS[s.market]}: {SELECTION_LABELS[s.selection] || s.selection} @ {formatOdds(s.odds)}
+                  {MARKET_LABELS[String(s.market)]} · {SELECTION_LABELS[String(s.selection)] || String(s.selection)} @ {formatOdds(Number(s.odds))}
                 </p>
               </div>
             ))}
-            <p className="text-sm">Odds: {formatOdds(result.bet.total_odds)} · Win: GHS {result.bet.potential_win}</p>
-            <button onClick={loadToSlip} className="btn-secondary w-full">Load to Bet Slip</button>
+            <button type="button" onClick={loadToSlip} className="btn-secondary w-full min-h-[44px]">Load to Bet Slip</button>
           </div>
         )}
       </div>

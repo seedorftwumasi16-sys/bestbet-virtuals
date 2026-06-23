@@ -18,6 +18,7 @@ import UpcomingMatchesStrip from '@/components/virtual-league/UpcomingMatchesStr
 import FadeInSection from '@/components/ui/FadeInSection';
 import MobileBetSlip from '@/components/mobile/MobileBetSlip';
 import { LeagueTableSkeleton } from '@/components/ui/LoadingSkeleton';
+import HomeBetsWidget from '@/components/bets/HomeBetsWidget';
 import { MatchesDataProvider } from '@/context/MatchesDataContext';
 
 export default function HomePage() {
@@ -56,6 +57,10 @@ export default function HomePage() {
 
           <FadeInSection>
             <PromotionalCards />
+          </FadeInSection>
+
+          <FadeInSection delay={0.04}>
+            <HomeBetsWidget />
           </FadeInSection>
 
           <FadeInSection delay={0.05}>

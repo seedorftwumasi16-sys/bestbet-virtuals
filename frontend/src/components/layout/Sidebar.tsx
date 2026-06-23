@@ -22,7 +22,7 @@ const items = [
   { href: '/players', label: 'Players', icon: IconChart },
   { href: '/league', label: 'League Table', icon: IconTrophy },
   { href: '/booking', label: 'Booking Code', icon: IconCard },
-  { href: '/tickets', label: 'Bet History', icon: IconChart },
+  { href: '/tickets', label: 'My Bets', icon: IconChart },
   { href: '/wallet', label: 'Wallet', icon: IconWallet },
   { href: '/wallet/deposit', label: 'Deposit', icon: IconWallet },
   { href: '/wallet/withdraw', label: 'Withdrawal', icon: IconWallet },

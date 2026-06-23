@@ -20,6 +20,7 @@ import { generateMatchOdds } from '../services/oddsService.js';
 import { buildPresetGoalEvents, buildPresetEvents } from '../services/liveMatchService.js';
 import adminLiveMatchRoutes from './adminLiveMatch.js';
 import adminPaymentsRoutes from './adminPayments.js';
+import adminBetsRoutes from './adminBets.js';
 import superAdminRoutes from './adminSuper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +36,7 @@ const router = Router();
 router.use(authenticate, requireAdmin);
 router.use(adminLiveMatchRoutes);
 router.use(adminPaymentsRoutes);
+router.use(adminBetsRoutes);
 router.use(superAdminRoutes);
 
 // Dashboard analytics
@@ -275,21 +277,7 @@ router.post('/users/:id/debit', async (req, res) => {
   res.json({ balance });
 });
 
-// Bets management
-router.get('/bets', async (req, res) => {
-  const result = await pool.query(
-    `SELECT b.*, u.email, u.first_name, u.last_name
-     FROM bets b JOIN users u ON b.user_id = u.id
-     ORDER BY b.created_at DESC LIMIT 200`
-  );
-  res.json(result.rows);
-});
-
-router.put('/bets/:id/void', async (req, res) => {
-  await voidBet(req.params.id);
-  await auditLog(req.user.id, 'bet_voided', 'bet', req.params.id, {}, req.ip);
-  res.json({ message: 'Bet voided' });
-});
+// Bets management — see adminBets.js
 
 // Deposit/withdrawal routes moved to adminPayments.js
 

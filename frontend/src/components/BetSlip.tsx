@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useBetSlip } from '@/context/BetSlipContext';
 import { useAuth } from '@/context/AuthContext';
 import { api, formatCurrency, formatOdds, MARKET_LABELS, SELECTION_LABELS } from '@/lib/api';
 import { copyToClipboard } from '@/lib/bookingCode';
+import { saveLastPlacedBet, loadLastPlacedBet, clearLastPlacedBet, BetRecord } from '@/lib/bets';
+import BetTicketCard from '@/components/bets/BetTicketCard';
 import { IconCard, IconFootball } from '@/components/icons/FootballIcons';
 
 export default function BetSlip({ embedded = false }: { embedded?: boolean }) {
@@ -13,14 +15,16 @@ export default function BetSlip({ embedded = false }: { embedded?: boolean }) {
   const { user, refreshUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [placedCode, setPlacedCode] = useState('');
+  const [placedBet, setPlacedBet] = useState<BetRecord | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const displayCode = placedCode || bookingCode;
+  useEffect(() => {
+    const saved = loadLastPlacedBet();
+    if (saved) setPlacedBet(saved);
+  }, []);
+
+  const displayCode = placedBet?.booking_code || bookingCode;
   const potentialWin = Math.round(stake * totalOdds * 100) / 100;
-  const qrUrl = displayCode
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(displayCode)}&bgcolor=0A0F14&color=00E676`
-    : null;
 
   const copyCode = async () => {
     if (!displayCode) return;
@@ -34,7 +38,7 @@ export default function BetSlip({ embedded = false }: { embedded?: boolean }) {
     setLoading(true);
     setMessage('');
     try {
-      const result = await api<{ bet: { booking_code: string } }>('/bets/place', {
+      const result = await api<{ bet: BetRecord; selections: BetRecord['selections'] }>('/bets/place', {
         method: 'POST',
         body: JSON.stringify({
           selections: selections.map((s) => ({
@@ -45,7 +49,14 @@ export default function BetSlip({ embedded = false }: { embedded?: boolean }) {
           stake,
         }),
       });
-      setPlacedCode(result.bet.booking_code);
+      const record: BetRecord = {
+        ...result.bet,
+        selections: result.selections || result.bet.selections,
+        display_status: 'pending',
+        actual_win: 0,
+      };
+      setPlacedBet(record);
+      saveLastPlacedBet(record);
       setBookingCode(null);
       clearSelections();
       await refreshUser();
@@ -83,7 +94,7 @@ export default function BetSlip({ embedded = false }: { embedded?: boolean }) {
           </motion.span>
         </div>
 
-        {displayCode && selections.length > 0 && (
+        {displayCode && selections.length > 0 && !placedBet && (
           <div className="mb-4 flex items-center justify-between bg-dark-800/80 rounded-xl px-3 py-2 border border-primary-500/20">
             <div>
               <p className="text-[9px] text-gray-500 uppercase tracking-wider">Booking Code</p>
@@ -221,18 +232,20 @@ export default function BetSlip({ embedded = false }: { embedded?: boolean }) {
           </p>
         )}
 
-        {placedCode && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mt-4 bg-dark-700/50 rounded-xl p-4 text-center border border-accent-500/30 shadow-gold"
-          >
-            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wider font-semibold">Bet Placed — Booking Code</p>
-            <p className="font-mono text-accent-500 font-black text-2xl tracking-widest">{placedCode}</p>
-            {qrUrl && (
-              <img src={qrUrl} alt="QR Code" className="mx-auto mt-3 rounded-xl border border-dark-600" width={120} height={120} />
-            )}
-            <p className="text-[10px] text-gray-500 mt-2">Scan or share this code</p>
+        {placedBet && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-4 space-y-3">
+            <p className="text-center text-primary-500 font-bold text-sm">Bet Placed Successfully!</p>
+            <BetTicketCard bet={placedBet} expanded />
+            <div className="flex gap-2">
+              <a href="/tickets" className="btn-primary flex-1 text-center text-sm py-3 min-h-[44px]">My Bets</a>
+              <button
+                type="button"
+                onClick={() => { setPlacedBet(null); clearLastPlacedBet(); }}
+                className="btn-secondary flex-1 text-sm py-3 min-h-[44px]"
+              >
+                Dismiss
+              </button>
+            </div>
           </motion.div>
         )}
       </div>

@@ -16,6 +16,7 @@ import PaymentsSection from './sections/PaymentsSection';
 import DepositsSection from './sections/DepositsSection';
 import WithdrawalsSection from './sections/WithdrawalsSection';
 import TransactionsSection from './sections/TransactionsSection';
+import BetsSection from './sections/BetsSection';
 import BookingSection from './sections/BookingSection';
 import ContentSection from './sections/ContentSection';
 import WinnersSection from './sections/WinnersSection';
@@ -36,6 +37,7 @@ export type AdminSection =
   | 'deposits'
   | 'withdrawals'
   | 'transactions'
+  | 'bets'
   | 'payments'
   | 'booking'
   | 'content'
@@ -54,6 +56,7 @@ const NAV: { id: AdminSection; label: string; icon: string; roles?: string[] }[]
   { id: 'deposits', label: 'Deposits', icon: '💰' },
   { id: 'withdrawals', label: 'Withdrawals', icon: '💸' },
   { id: 'transactions', label: 'Transactions', icon: '📋' },
+  { id: 'bets', label: 'Bet Slips', icon: '🎫' },
   { id: 'payments', label: 'Payment Config', icon: '💳' },
   { id: 'booking', label: 'Booking Codes', icon: '🎫' },
   { id: 'content', label: 'Content', icon: '📢' },
@@ -169,6 +172,7 @@ export default function AdminShell() {
           {section === 'deposits' && <DepositsSection />}
           {section === 'withdrawals' && <WithdrawalsSection />}
           {section === 'transactions' && <TransactionsSection />}
+          {section === 'bets' && <BetsSection />}
           {section === 'payments' && <PaymentsSection />}
           {section === 'booking' && <BookingSection />}
           {section === 'content' && <ContentSection />}
