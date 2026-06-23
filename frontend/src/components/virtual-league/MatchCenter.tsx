@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { api } from '@/lib/api';
+import { api, getSocketUrl } from '@/lib/api';
 import { io, Socket } from 'socket.io-client';
 import TeamLogo from '@/components/ui/TeamLogo';
 
@@ -51,7 +51,7 @@ export default function MatchCenter({ matchId }: { matchId: string }) {
 
   useEffect(() => {
     loadMatch();
-    const socket: Socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000');
+    const socket: Socket = io(getSocketUrl());
 
     socket.on('match:update', (update: {
       matchId: string; minute: number; phase?: string;

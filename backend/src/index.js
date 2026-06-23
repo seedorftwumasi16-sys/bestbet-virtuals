@@ -28,13 +28,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+const allowedOrigins = (process.env.FRONTEND_URL ||
+  'http://localhost:3000,http://localhost:3001,https://bestbet-virtuals.vercel.app,https://bestbet-virtuals-seedorf.vercel.app')
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);
 
 function corsOrigin(origin, callback) {
-  if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+  if (!origin) {
+    callback(null, true);
+    return;
+  }
+  if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+    callback(null, true);
+    return;
+  }
+  if (/^https:\/\/[\w-]+\.vercel\.app$/.test(origin)) {
     callback(null, true);
     return;
   }
@@ -42,7 +51,7 @@ function corsOrigin(origin, callback) {
     callback(null, true);
     return;
   }
-  callback(null, allowedOrigins[0]);
+  callback(new Error(`CORS blocked for origin: ${origin}`));
 }
 
 const app = express();

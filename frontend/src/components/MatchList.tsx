@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { api } from '@/lib/api';
+import { api, getSocketUrl } from '@/lib/api';
 import MatchCard from '@/components/MatchCard';
 import MatchCenter from '@/components/virtual-league/MatchCenter';
 import { io, Socket } from 'socket.io-client';
@@ -32,7 +32,7 @@ export default function MatchList() {
 
   useEffect(() => {
     loadMatches();
-    const socket: Socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000');
+    const socket: Socket = io(getSocketUrl());
 
     socket.on('match:live', ({ matchId }: { matchId: string }) => {
       setActiveLive(matchId);

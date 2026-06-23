@@ -7,10 +7,21 @@ const isDev = process.env.NODE_ENV === 'development';
  */
 export function getApiBaseUrl(): string {
   if (typeof window === 'undefined') return configuredApiUrl;
-  if (isDev) return '';
   const host = window.location.hostname;
   if (host === 'localhost' || host === '127.0.0.1') return '';
+  // Same-origin /api proxy on Vercel avoids CORS and wrong API host issues
+  if (host.endsWith('.vercel.app')) return '';
   return configuredApiUrl;
+}
+
+export function getSocketUrl(): string {
+  const socketUrl = (process.env.NEXT_PUBLIC_SOCKET_URL || configuredApiUrl).replace(/\/$/, '');
+  if (typeof window === 'undefined') return socketUrl;
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.vercel.app')) {
+    return socketUrl;
+  }
+  return socketUrl;
 }
 
 export function getConfiguredApiUrl(): string {

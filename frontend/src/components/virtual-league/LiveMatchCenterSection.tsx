@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
-import { api } from '@/lib/api';
+import { api, getSocketUrl } from '@/lib/api';
 import MatchCenter from '@/components/virtual-league/MatchCenter';
 import { IconLive } from '@/components/icons/FootballIcons';
 
@@ -34,7 +34,7 @@ export default function LiveMatchCenterSection() {
 
   useEffect(() => {
     pickMatch();
-    const socket: Socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000');
+    const socket: Socket = io(getSocketUrl());
 
     socket.on('match:live', ({ matchId: id }: { matchId: string }) => {
       setMatchId(id);
