@@ -120,14 +120,15 @@ export default function LiveMatchEditorSection() {
         data = await api<LiveState>(`/admin/matches/${id}/live`);
       } catch (liveErr) {
         console.warn('[LiveEditor] /live endpoint failed, using fallback:', liveErr);
-        const allMatches = await api<MatchRow[]>('/admin/matches');
-        const match = allMatches.find((x) => x.id === id);
+        const details = await api<{ match: MatchRow; events: GoalEvent[] }>(`/matches/${id}`);
+        const match = details.match;
         if (!match?.home_team_id) throw liveErr;
         const [homePlayers, awayPlayers] = await Promise.all([
           api<Player[]>(`/admin/teams/${match.home_team_id}/players`),
           api<Player[]>(`/admin/teams/${match.away_team_id}/players`),
         ]);
-        data = { match, goals: [], events: [], homePlayers, awayPlayers };
+        const goals = (details.events || []).filter((e) => e.event_type === 'goal');
+        data = { match, goals, events: details.events || [], homePlayers, awayPlayers };
       }
 
       console.log('[LiveEditor] match loaded:', {

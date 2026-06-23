@@ -53,6 +53,7 @@ export default function MatchesSection() {
   const [homePlayers, setHomePlayers] = useState<Player[]>([]);
   const [awayPlayers, setAwayPlayers] = useState<Player[]>([]);
   const [newGoal, setNewGoal] = useState<PresetGoal>({ team: 'home', minute: 12, player: '' });
+  const [presetError, setPresetError] = useState<string | null>(null);
 
   const load = () => {
     const q = filter === 'all' ? '' : `?status=${filter}`;
@@ -81,7 +82,13 @@ export default function MatchesSection() {
   }, [form.awayTeamId]);
 
   const addPresetGoal = () => {
-    if (!newGoal.player) return;
+    if (!newGoal.playerId && !newGoal.player.trim()) {
+      const msg = 'Select a goal scorer from the dropdown before adding a goal.';
+      console.warn('[Matches]', msg);
+      setPresetError(msg);
+      return;
+    }
+    setPresetError(null);
     const updated = [...presetGoals, { ...newGoal }];
     setPresetGoals(updated);
     setForm({
@@ -89,7 +96,7 @@ export default function MatchesSection() {
       presetHomeScore: updated.filter((g) => g.team === 'home').length,
       presetAwayScore: updated.filter((g) => g.team === 'away').length,
     });
-    setNewGoal({ team: 'home', minute: 45, player: '' });
+    setNewGoal({ team: newGoal.team, minute: 45, player: '', playerId: '' });
   };
 
   const removePresetGoal = (idx: number) => {
@@ -163,6 +170,9 @@ export default function MatchesSection() {
 
         {form.usePreset && (
           <div className="mt-4 border-t border-dark-600 pt-4 space-y-3">
+            {presetError && (
+              <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{presetError}</div>
+            )}
             <div className="flex flex-wrap gap-4 text-sm">
               <span className="text-white font-bold">
                 Final: {homeTeam?.name || 'Home'} {form.presetHomeScore} – {form.presetAwayScore} {awayTeam?.name || 'Away'}
@@ -170,7 +180,11 @@ export default function MatchesSection() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
               <Field label="Team">
-                <select value={newGoal.team} onChange={(e) => setNewGoal({ ...newGoal, team: e.target.value as 'home' | 'away' })} className="input-field">
+                <select
+                  value={newGoal.team}
+                  onChange={(e) => setNewGoal({ team: e.target.value as 'home' | 'away', minute: newGoal.minute, player: '', playerId: '' })}
+                  className="input-field"
+                >
                   <option value="home">{homeTeam?.name || 'Home'}</option>
                   <option value="away">{awayTeam?.name || 'Away'}</option>
                 </select>
