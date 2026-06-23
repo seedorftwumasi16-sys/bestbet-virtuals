@@ -48,9 +48,9 @@ async function main() {
   }
 
   const live = await check('Match live state', `${BASE}/api/admin/matches/${m.id}/live`, { headers: h });
-  await check('Team players', `${BASE}/api/admin/teams/${m.home_team_id}/players`, { headers: h });
+  const playersCheck = await check('Team players', `${BASE}/api/admin/teams/${m.home_team_id}/players`, { headers: h });
 
-  const players = await (await fetch(`${BASE}/api/admin/teams/${m.home_team_id}/players`, { headers: h })).json();
+  const players = Array.isArray(playersCheck.body) ? playersCheck.body : [];
   const scorer = players[0];
 
   const goalRes = await fetch(`${BASE}/api/admin/matches/${m.id}/goals`, {
