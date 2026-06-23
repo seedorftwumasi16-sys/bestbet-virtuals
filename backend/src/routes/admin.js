@@ -17,6 +17,7 @@ import {
 import { settleBetsForMatch } from '../services/bettingService.js';
 import { forceFinishMatch } from '../services/schedulerService.js';
 import { generateMatchOdds } from '../services/oddsService.js';
+import superAdminRoutes from './adminSuper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads');
@@ -29,6 +30,7 @@ const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } });
 
 const router = Router();
 router.use(authenticate, requireAdmin);
+router.use(superAdminRoutes);
 
 // Dashboard analytics
 router.get('/analytics', async (req, res) => {
@@ -36,7 +38,7 @@ router.get('/analytics', async (req, res) => {
     const [users, deposits, withdrawals, bets, profit] = await Promise.all([
       pool.query('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL \'24 hours\') as active FROM users WHERE role = \'user\''),
       pool.query('SELECT COALESCE(SUM(amount), 0) as total FROM transactions WHERE type = \'deposit\' AND status = \'completed\''),
-      pool.query('SELECT COALESCE(SUM(ABS(amount)), 0) as total FROM transactions WHERE type = \'withdrawal\' AND status = \'completed\''),
+      pool.query('SELECT COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE amount END), 0) as total FROM transactions WHERE type = \'withdrawal\' AND status = \'completed\''),
       pool.query('SELECT COUNT(*) as total, COALESCE(SUM(stake), 0) as total_stake FROM bets'),
       pool.query(`
         SELECT COALESCE(SUM(CASE WHEN status = 'lost' THEN stake ELSE 0 END), 0) as house_profit,
@@ -59,8 +61,42 @@ router.get('/analytics', async (req, res) => {
       totalWithdrawals: parseFloat(withdrawals.rows[0].total),
       totalBets: parseInt(bets.rows[0].total),
       totalStake: parseFloat(bets.rows[0].total_stake),
+      totalWinnings: parseFloat(profit.rows[0].payouts),
       houseProfit: parseFloat(profit.rows[0].house_profit) - parseFloat(profit.rows[0].payouts),
       matchStats: matchStats.rows[0],
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Aggregated dashboard summary
+router.get('/dashboard', async (req, res) => {
+  try {
+    const [users, deposits, withdrawals, bets, liveMatches] = await Promise.all([
+      pool.query('SELECT COUNT(*) as total FROM users WHERE role = \'user\''),
+      pool.query(
+        `SELECT COUNT(*) as total, COALESCE(SUM(amount), 0) as amount
+         FROM deposit_requests WHERE status IN ('pending', 'approved', 'completed')`
+      ),
+      pool.query(
+        `SELECT COUNT(*) as total, COALESCE(SUM(amount), 0) as amount
+         FROM withdrawal_requests WHERE status IN ('pending', 'approved', 'completed')`
+      ),
+      pool.query(
+        `SELECT COUNT(*) as total, COALESCE(SUM(stake), 0) as stake,
+         COALESCE(SUM(CASE WHEN status = 'won' THEN potential_win ELSE 0 END), 0) as winnings
+         FROM bets`
+      ),
+      pool.query('SELECT COUNT(*) as total FROM matches WHERE status = \'live\''),
+    ]);
+
+    res.json({
+      users: users.rows[0],
+      deposits: deposits.rows[0],
+      withdrawals: withdrawals.rows[0],
+      bets: bets.rows[0],
+      liveMatches: liveMatches.rows[0],
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -164,7 +200,6 @@ router.put('/settings', async (req, res) => {
   res.json(await getAllSettings());
 });
 
-// League table
 router.put('/league-table', async (req, res) => {
   const { entries } = req.body;
   for (const e of entries) {
@@ -176,6 +211,21 @@ router.put('/league-table', async (req, res) => {
     );
   }
   res.json({ message: 'League table updated' });
+});
+
+router.post('/league-table/reset', async (req, res) => {
+  await pool.query(
+    `UPDATE league_table SET played = 0, won = 0, drawn = 0, lost = 0,
+     goals_for = 0, goals_against = 0, points = 0, updated_at = NOW()`
+  );
+  await pool.query('DELETE FROM team_form');
+  const teams = await pool.query('SELECT team_id FROM league_table ORDER BY team_id');
+  let pos = 1;
+  for (const t of teams.rows) {
+    await pool.query('UPDATE league_table SET position = $1 WHERE team_id = $2', [pos++, t.team_id]);
+  }
+  await auditLog(req.user.id, 'league_table_reset', 'league_table', null, {}, req.ip);
+  res.json({ message: 'League tables reset' });
 });
 
 // Users management

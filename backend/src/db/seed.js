@@ -22,15 +22,15 @@ async function seed() {
     const hash = await bcrypt.hash('admin123', 12);
     await client.query(
       `INSERT INTO users (email, password_hash, first_name, last_name, role, balance)
-       VALUES ($1, $2, 'Admin', 'User', 'admin', 0)
+       VALUES ($1, $2, 'Admin', 'SkyBet', 'admin', 0)
        ON CONFLICT (email) DO NOTHING`,
-      ['admin@bestbet.com', hash]
+      ['admin@skybet.com', hash]
     );
     await client.query(
       `INSERT INTO users (email, phone, password_hash, first_name, last_name, balance)
        VALUES ($1, $2, $3, 'Demo', 'User', 1000)
        ON CONFLICT (email) DO NOTHING`,
-      ['demo@bestbet.com', '0244123456', hash]
+      ['demo@skybet.com', '0244123456', hash]
     );
     for (const team of TEAMS) {
       const existing = await client.query('SELECT id FROM teams WHERE name = $1', [team.name]);

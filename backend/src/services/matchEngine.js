@@ -2,6 +2,7 @@ import pool from '../db/pool.js';
 import { generateMatchOdds } from './oddsService.js';
 import { getSetting } from './settingsService.js';
 import { updateLeaguePositions } from './leagueService.js';
+import { getMatchIntervalSeconds } from './matchIntervalService.js';
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -40,20 +41,27 @@ function calcHalfTime(events) {
   return { home: htHome, away: htAway };
 }
 
-export async function createScheduledMatch(homeTeamId, awayTeamId, scheduledAt) {
+export async function createScheduledMatch(homeTeamId, awayTeamId, scheduledAt, leagueName = null, leagueId = null) {
   const teams = await pool.query(
-    'SELECT id, strength FROM teams WHERE id IN ($1, $2)',
+    'SELECT id, strength, league FROM teams WHERE id IN ($1, $2)',
     [homeTeamId, awayTeamId]
   );
   const homeTeam = teams.rows.find((t) => t.id === homeTeamId);
   const awayTeam = teams.rows.find((t) => t.id === awayTeamId);
   const homeStr = homeTeam?.strength || 50;
   const awayStr = awayTeam?.strength || 50;
+  const league = leagueName || homeTeam?.league || awayTeam?.league;
+
+  let resolvedLeagueId = leagueId;
+  if (!resolvedLeagueId && league) {
+    const lg = await pool.query('SELECT id FROM leagues WHERE name = $1', [league]);
+    resolvedLeagueId = lg.rows[0]?.id || null;
+  }
 
   const res = await pool.query(
-    `INSERT INTO matches (home_team_id, away_team_id, scheduled_at, status)
-     VALUES ($1, $2, $3, 'scheduled') RETURNING *`,
-    [homeTeamId, awayTeamId, scheduledAt]
+    `INSERT INTO matches (home_team_id, away_team_id, scheduled_at, status, league_id)
+     VALUES ($1, $2, $3, 'scheduled', $4) RETURNING *`,
+    [homeTeamId, awayTeamId, scheduledAt, resolvedLeagueId]
   );
   const match = res.rows[0];
   const odds = generateMatchOdds(homeStr, awayStr);
@@ -67,25 +75,35 @@ export async function createScheduledMatch(homeTeamId, awayTeamId, scheduledAt) 
 }
 
 export async function generateNextMatches() {
-  const teamsRes = await pool.query('SELECT id FROM teams WHERE is_active = TRUE ORDER BY RANDOM()');
-  const teams = teamsRes.rows;
-  if (teams.length < 2) return [];
+  const leaguesRes = await pool.query(
+    `SELECT DISTINCT league FROM teams WHERE is_active = TRUE AND league IS NOT NULL ORDER BY league`
+  );
+  if (!leaguesRes.rows.length) return [];
 
-  const interval = parseInt(await getSetting('match_interval_minutes', '3'));
-  const scheduledAt = new Date(Date.now() + interval * 60 * 1000);
+  const intervalSec = await getMatchIntervalSeconds();
+  const baseTime = Date.now() + intervalSec * 1000;
   const matches = [];
 
-  const used = new Set();
-  for (let i = 0; i < Math.min(4, Math.floor(teams.length / 2)); i++) {
-    let home, away;
-    do {
-      home = teams[randomInt(0, teams.length - 1)];
-      away = teams[randomInt(0, teams.length - 1)];
-    } while (home.id === away.id || used.has(home.id) || used.has(away.id));
+  for (let i = 0; i < leaguesRes.rows.length; i++) {
+    const leagueName = leaguesRes.rows[i].league;
+    const teamsRes = await pool.query(
+      'SELECT id FROM teams WHERE is_active = TRUE AND league = $1 ORDER BY RANDOM()',
+      [leagueName]
+    );
+    const teams = teamsRes.rows;
+    if (teams.length < 2) continue;
 
-    used.add(home.id);
-    used.add(away.id);
-    const match = await createScheduledMatch(home.id, away.id, scheduledAt);
+    let home = teams[0];
+    let away = teams[1];
+    if (teams.length > 2) {
+      home = teams[randomInt(0, teams.length - 1)];
+      do {
+        away = teams[randomInt(0, teams.length - 1)];
+      } while (away.id === home.id);
+    }
+
+    const scheduledAt = new Date(baseTime + i * 5000);
+    const match = await createScheduledMatch(home.id, away.id, scheduledAt, leagueName);
     matches.push(match);
   }
   return matches;

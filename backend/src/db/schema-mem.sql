@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS teams (
   league varchar(100) DEFAULT 'Virtual League',
   is_active boolean DEFAULT true,
   strength int DEFAULT 50,
+  color_primary varchar(20) DEFAULT '#00E676',
+  color_secondary varchar(20) DEFAULT '#FFD700',
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -82,6 +84,12 @@ CREATE TABLE IF NOT EXISTS matches (
   commentary text,
   is_manual boolean DEFAULT false,
   manual_mode boolean DEFAULT false,
+  is_archived boolean DEFAULT false,
+  is_paused boolean DEFAULT false,
+  match_number int,
+  league_id uuid,
+  season_id uuid,
+  tournament_id uuid,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -218,4 +226,68 @@ CREATE TABLE IF NOT EXISTS promotions (
   badge varchar(50),
   is_active boolean DEFAULT true,
   created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS login_history (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id uuid REFERENCES users(id),
+  email varchar(255),
+  ip_address varchar(45),
+  user_agent text,
+  success boolean DEFAULT true,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS leagues (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name varchar(100) NOT NULL,
+  code varchar(20),
+  description text,
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS seasons (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  league_id uuid REFERENCES leagues(id),
+  name varchar(100) NOT NULL,
+  start_date date,
+  end_date date,
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS tournaments (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name varchar(100) NOT NULL,
+  league_id uuid REFERENCES leagues(id),
+  season_id uuid REFERENCES seasons(id),
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS content_banners (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  title varchar(200) NOT NULL,
+  subtitle text,
+  image_url varchar(500),
+  link_url varchar(500),
+  badge varchar(50),
+  position int DEFAULT 0,
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS announcements (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  title varchar(200) NOT NULL,
+  message text NOT NULL,
+  audience varchar(30) DEFAULT 'all',
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
 );

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import AuthBranding from '@/components/auth/AuthBranding';
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -28,8 +29,10 @@ export default function RegisterPage() {
 
   return (
     <div className="max-w-md mx-auto px-4 py-12">
-      <div className="card">
-        <h1 className="text-2xl font-bold mb-6 text-center">Create Account</h1>
+      <AuthBranding />
+      <div className="card border-primary-500/20">
+        <h1 className="text-2xl font-bold mb-2 text-center">Join SkyBet</h1>
+        <p className="text-gray-500 text-sm text-center mb-6">Create your account — Bet Smart, Win More</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -55,7 +58,7 @@ export default function RegisterPage() {
           </div>
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <button type="submit" disabled={loading} className="btn-primary w-full py-3">
-            {loading ? 'Creating account...' : 'Register'}
+            {loading ? 'Creating account...' : 'Register with SkyBet'}
           </button>
         </form>
         <p className="mt-4 text-center text-sm text-gray-400">

@@ -80,12 +80,12 @@ export default function DepositPage() {
             </div>
           </div>
 
-          {PAYMENT_INSTRUCTIONS[method] && (
+          {PAYMENT_INSTRUCTIONS[method as keyof typeof PAYMENT_INSTRUCTIONS] && (
             <div className="bg-accent-500/10 border border-accent-500/30 rounded-xl p-4 text-sm">
               <p className="font-bold text-accent-400 mb-2">Payment Instructions</p>
               <p>Send <strong>GHS {amount}</strong> to:</p>
-              <p className="font-mono text-lg font-bold text-white mt-1">{PAYMENT_INSTRUCTIONS[method].number}</p>
-              <p className="text-gray-400 text-xs mt-1">{PAYMENT_INSTRUCTIONS[method].name} · {PAYMENT_INSTRUCTIONS[method].network}</p>
+              <p className="font-mono text-lg font-bold text-white mt-1">{PAYMENT_INSTRUCTIONS[method as keyof typeof PAYMENT_INSTRUCTIONS].number}</p>
+              <p className="text-gray-400 text-xs mt-1">{PAYMENT_INSTRUCTIONS[method as keyof typeof PAYMENT_INSTRUCTIONS].name} · {PAYMENT_INSTRUCTIONS[method as keyof typeof PAYMENT_INSTRUCTIONS].network}</p>
               <p className="text-gray-500 text-xs mt-2">Use your phone number as reference, then upload screenshot below.</p>
             </div>
           )}

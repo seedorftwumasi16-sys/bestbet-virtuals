@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { api } from '@/lib/api';
 
 interface User {
@@ -17,7 +18,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   register: (data: { email: string; password: string; phone?: string; firstName?: string; lastName?: string }) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -33,6 +34,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshUser = useCallback(async () => {
     try {
       const data = await api<User>('/auth/me');
+      if (!data?.id || !data?.email) {
+        throw new Error('Invalid session');
+      }
       setUser(data);
     } catch {
       setUser(null);
@@ -56,9 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
-    localStorage.setItem('token', data.token);
-    setToken(data.token);
-    setUser(data.user);
+    flushSync(() => {
+      localStorage.setItem('token', data.token);
+      setToken(data.token);
+      setUser(data.user);
+    });
+    return data.user;
   };
 
   const register = async (data: { email: string; password: string; phone?: string; firstName?: string; lastName?: string }) => {
@@ -72,9 +79,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastName: data.lastName,
       }),
     });
-    localStorage.setItem('token', res.token);
-    setToken(res.token);
-    setUser(res.user);
+    flushSync(() => {
+      localStorage.setItem('token', res.token);
+      setToken(res.token);
+      setUser(res.user);
+    });
   };
 
   const logout = () => {

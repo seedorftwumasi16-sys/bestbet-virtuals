@@ -7,6 +7,8 @@
     "start": "node src/index.js",
     "migrate": "node src/db/migrate.js",
     "seed": "node src/db/seed.js",
+    "test:admin": "node scripts/test-admin-auth.js",
+    "test:admin:full": "node scripts/test-admin-full.js",
     "build": "echo 'No build step required'"
   },
   "dependencies": {

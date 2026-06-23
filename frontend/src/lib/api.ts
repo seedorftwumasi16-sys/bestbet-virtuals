@@ -1,9 +1,80 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const configuredApiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/$/, '');
+const isDev = process.env.NODE_ENV === 'development';
+
+/**
+ * In Next.js dev, always use same-origin `/api` (rewrites proxy to backend).
+ * Avoids CORS / wrong-host issues when opening via 127.0.0.1 or LAN IP.
+ */
+export function getApiBaseUrl(): string {
+  if (typeof window === 'undefined') return configuredApiUrl;
+  if (isDev) return '';
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1') return '';
+  return configuredApiUrl;
+}
+
+export function getConfiguredApiUrl(): string {
+  return configuredApiUrl;
+}
+
+export type ApiHealth = {
+  status: string;
+  service?: string;
+  database?: string;
+  dbMode?: string;
+  port?: number;
+  error?: string;
+};
+
+function createTimeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(ms);
+  }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
+export async function checkApiHealth(): Promise<ApiHealth> {
+  const base = getApiBaseUrl();
+  const url = `${base}/api/health`;
+  try {
+    const res = await fetch(url, { signal: createTimeoutSignal(8000) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { status: 'error', error: data.error || `HTTP ${res.status}` };
+    return data as ApiHealth;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Network error';
+    return {
+      status: 'error',
+      error: msg.includes('fetch')
+        ? `Cannot reach backend at ${configuredApiUrl}. Start it with: cd backend && npm run dev`
+        : msg,
+    };
+  }
+}
+
+function formatFetchError(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.name === 'TimeoutError' || err.message.includes('timeout')) {
+      return `API request timed out. Backend at ${configuredApiUrl} may be hung — restart it.`;
+    }
+    if (err.message === 'Failed to fetch' || err.message.includes('NetworkError')) {
+      return `Cannot connect to API (${configuredApiUrl}). Ensure the backend is running on port 4000.`;
+    }
+    return err.message;
+  }
+  return 'Request failed';
+}
 
 export async function api<T = unknown>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const base = getApiBaseUrl();
+  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = `${base}/api${path}`;
+
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
@@ -11,9 +82,33 @@ export async function api<T = unknown>(
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
 
-  const res = await fetch(`${API_URL}/api${endpoint}`, { ...options, headers });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Request failed');
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...options,
+      headers,
+      signal: options.signal ?? createTimeoutSignal(30000),
+    });
+  } catch (err) {
+    throw new Error(formatFetchError(err));
+  }
+
+  let data: Record<string, unknown> = {};
+  const text = await res.text();
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    if (!res.ok) throw new Error(`API error (${res.status}): ${text.slice(0, 120) || 'empty response'}`);
+  }
+
+  if (!res.ok) {
+    const message =
+      (typeof data.error === 'string' && data.error) ||
+      (typeof data.message === 'string' && data.message) ||
+      `Request failed (${res.status})`;
+    throw new Error(message);
+  }
+
   return data as T;
 }
 
@@ -61,7 +156,7 @@ export const MARKET_GROUPS = [
 ];
 
 export const PAYMENT_INSTRUCTIONS = {
-  mtn_momo: { number: '0551234567', name: 'BestBet Virtuals', network: 'MTN MoMo' },
-  telecel_cash: { number: '0201234567', name: 'BestBet Virtuals', network: 'Telecel Cash' },
-  airteltigo_money: { number: '0271234567', name: 'BestBet Virtuals', network: 'AirtelTigo Money' },
+  mtn_momo: { number: '0551234567', name: 'SkyBet', network: 'MTN MoMo' },
+  telecel_cash: { number: '0201234567', name: 'SkyBet', network: 'Telecel Cash' },
+  airteltigo_money: { number: '0271234567', name: 'SkyBet', network: 'AirtelTigo Money' },
 };

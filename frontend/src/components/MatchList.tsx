@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { api } from '@/lib/api';
-import MatchCard from './MatchCard';
-import LiveMatchView from './LiveMatchView';
+import MatchCard from '@/components/MatchCard';
+import MatchCenter from '@/components/virtual-league/MatchCenter';
 import { io, Socket } from 'socket.io-client';
+import { MatchCardSkeleton } from '@/components/ui/LoadingSkeleton';
+import { IconFootball } from '@/components/icons/FootballIcons';
 
 interface Match {
   id: string;
@@ -64,8 +66,9 @@ export default function MatchList() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
+      <div className="space-y-4">
+        <MatchCardSkeleton />
+        <MatchCardSkeleton />
       </div>
     );
   }
@@ -74,32 +77,41 @@ export default function MatchList() {
     <div className="space-y-6">
       {liveMatches.length > 0 && (
         <section>
-          <div className="flex items-center gap-2 mb-4">
-            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-            <h2 className="text-lg font-bold text-red-400">LIVE Matches</h2>
+          <div className="flex items-center gap-3 mb-4">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+            </span>
+            <h2 className="text-xl font-black text-white uppercase tracking-wide">Match Center</h2>
+            <span className="badge-live">LIVE</span>
           </div>
-          {activeLive && <LiveMatchView matchId={activeLive} />}
+          {activeLive && <MatchCenter matchId={activeLive} />}
         </section>
       )}
 
-      <section>
+      <section id="upcoming">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold">Upcoming Matches</h2>
+            <h2 className="text-lg font-black text-white flex items-center gap-2">
+              <IconFootball size={20} className="text-primary-500" />
+              Upcoming Matches
+            </h2>
           <CountdownTimer matches={matches} />
         </div>
 
         {matches.length === 0 ? (
-          <div className="card text-center py-12 text-gray-500">
-            <p>No upcoming matches. New matches generate every 3 minutes.</p>
+          <div className="glass-panel text-center py-12 text-gray-500 border border-dark-600/40">
+            <p className="text-lg font-semibold text-gray-400">No upcoming matches</p>
+            <p className="text-sm mt-1">New matches generate automatically every few minutes</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {matches.map((match, i) => (
               <motion.div
                 key={match.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
+                transition={{ delay: i * 0.04 }}
+                whileHover={{ y: -2 }}
               >
                 <MatchCard match={match} />
               </motion.div>
@@ -134,9 +146,9 @@ function CountdownTimer({ matches }: { matches: Match[] }) {
   if (!timeLeft) return null;
 
   return (
-    <div className="flex items-center gap-2 bg-dark-700 px-3 py-1.5 rounded-lg">
-      <span className="text-gray-400 text-xs">Next match</span>
-      <span className="text-primary-500 font-mono font-bold">{timeLeft}</span>
+    <div className="flex items-center gap-2 glass-panel px-3 py-1.5 rounded-xl border border-primary-500/20">
+      <span className="text-gray-400 text-xs font-medium">Next kickoff</span>
+      <span className="text-primary-500 font-mono font-black text-sm tabular-nums">{timeLeft}</span>
     </div>
   );
 }

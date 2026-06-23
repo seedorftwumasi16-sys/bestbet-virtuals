@@ -1,4 +1,4 @@
--- BestBet Virtuals Production Schema (PostgreSQL)
+-- SkyBet Production Schema (PostgreSQL)
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 

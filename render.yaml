@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: bestbet-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: ADMIN_EMAIL
+        value: admin@skybet.com
+      - key: ADMIN_PASSWORD
+        value: admin123
+      - key: DEMO_PASSWORD
+        value: SkyBetDemo2024!
+      - key: MATCH_INTERVAL_MINUTES
+        value: "2"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bestbet-db
+          property: connectionString
+      - key: FRONTEND_URL
+        sync: false
+
+databases:
+  - name: bestbet-db
+    plan: free
+    databaseName: bestbet_virtuals
+    user: bestbet

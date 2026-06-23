@@ -41,26 +41,48 @@ router.post('/register', authLimiter, async (req, res) => {
 router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     const user = result.rows[0];
     if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-    if (user.is_suspended) return res.status(403).json({ error: 'Account suspended' });
+    if (user.is_banned) return res.status(403).json({ error: 'Account banned' });
+    if (user.is_suspended || user.role === 'suspended') {
+      return res.status(403).json({ error: 'Account suspended' });
+    }
 
     const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!valid) {
+      if (user.id) {
+        await pool.query(
+          'INSERT INTO login_history (user_id, email, ip_address, user_agent, success) VALUES ($1, $2, $3, $4, false)',
+          [user.id, email, req.ip, req.headers['user-agent']]
+        );
+      }
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET is not configured');
+      return res.status(500).json({ error: 'Server auth misconfigured' });
+    }
 
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
 
     await auditLog(user.id, 'user_login', 'user', user.id, {}, req.ip);
+    await pool.query(
+      'INSERT INTO login_history (user_id, email, ip_address, user_agent, success) VALUES ($1, $2, $3, $4, true)',
+      [user.id, user.email, req.ip, req.headers['user-agent']]
+    );
     res.json({
       user: {
-        id: user.id, email: user.email, firstName: user.first_name,
-        lastName: user.last_name, role: user.role, balance: user.balance, phone: user.phone,
+        id: user.id, email: user.email, first_name: user.first_name,
+        last_name: user.last_name, role: user.role, balance: user.balance, phone: user.phone,
       },
       token,
     });
@@ -113,6 +135,9 @@ router.get('/me', authenticate, async (req, res) => {
       'SELECT id, email, phone, first_name, last_name, role, balance, created_at FROM users WHERE id = $1',
       [req.user.id]
     );
+    if (!result.rows[0]) {
+      return res.status(401).json({ error: 'User not found' });
+    }
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });

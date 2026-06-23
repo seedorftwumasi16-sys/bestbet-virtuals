@@ -2,6 +2,7 @@ import pool from '../db/pool.js';
 import { evaluateSelection } from './oddsService.js';
 import { creditAccount } from './walletService.js';
 import { createNotification } from './notificationService.js';
+import { getSetting } from './settingsService.js';
 
 function generateBookingCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -37,6 +38,12 @@ export async function placeBet(userId, selections, stake) {
       const match = matchRes.rows[0];
       if (!match || match.status !== 'scheduled') {
         throw new Error(`Match ${sel.matchId} is not available for betting`);
+      }
+
+      const closeSec = parseInt(await getSetting('betting_close_seconds', '10'), 10);
+      const msToKickoff = new Date(match.scheduled_at).getTime() - Date.now();
+      if (msToKickoff < closeSec * 1000) {
+        throw new Error('Betting closed — kickoff in less than 10 seconds');
       }
 
       const oddsRes = await client.query(

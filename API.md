@@ -1,4 +1,4 @@
-# BestBet Virtuals API Documentation
+# SkyBet API Documentation
 
 Base URL: `http://localhost:4000/api` (production: your API domain)
 
@@ -107,4 +107,4 @@ Authentication: `Authorization: Bearer <jwt_token>`
 
 ## Health
 
-`GET /api/health` → `{ status: "ok", service: "BestBet Virtuals API" }`
+`GET /api/health` → `{ status: "ok", service: "SkyBet API", brand: "SkyBet", tagline: "Bet Smart, Win More" }`

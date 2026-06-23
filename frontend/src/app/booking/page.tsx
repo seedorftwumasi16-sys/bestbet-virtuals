@@ -43,7 +43,8 @@ export default function BookingPage() {
 
   return (
     <div className="max-w-md mx-auto px-4 py-6">
-      <h1 className="text-2xl font-bold mb-6">Booking Code</h1>
+      <h1 className="text-2xl font-bold mb-2">SkyBet Booking Code</h1>
+      <p className="text-gray-500 text-sm mb-6">Load shared bets from SkyBet booking codes</p>
       <div className="card space-y-4">
         <div>
           <label className="text-sm text-gray-400">Enter Booking Code</label>

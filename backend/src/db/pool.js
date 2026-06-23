@@ -28,9 +28,26 @@ if (useMem) {
     implementation: () => Math.random(),
     impure: true,
   });
+  mem.public.registerFunction({
+    name: 'abs',
+    args: ['float', 'integer', 'double precision'],
+    returns: 'float',
+    implementation: (x) => Math.abs(Number(x)),
+  });
 
   const schema = fs.readFileSync(path.join(__dirname, 'schema-mem.sql'), 'utf8');
   mem.public.none(schema);
+  try {
+    const adminSchema = fs.readFileSync(path.join(__dirname, 'schema-admin.sql'), 'utf8');
+    // pg-mem: strip ALTER CONSTRAINT lines that may fail on fresh schema
+    const adminLines = adminSchema
+      .split('\n')
+      .filter((line) => !line.includes('DROP CONSTRAINT') && !line.includes('ADD CONSTRAINT'))
+      .join('\n');
+    mem.public.none(adminLines);
+  } catch {
+    /* schema-admin optional for mem */
+  }
 
   const { Pool } = mem.adapters.createPg();
   pool = new Pool();

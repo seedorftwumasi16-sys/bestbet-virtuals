@@ -81,7 +81,7 @@ export default function LiveMatchView({ matchId }: { matchId: string }) {
       if (id === matchId) loadMatch();
     });
 
-    return () => socket.disconnect();
+    return () => { socket.disconnect(); };
   }, [matchId]);
 
   const loadMatch = async () => {

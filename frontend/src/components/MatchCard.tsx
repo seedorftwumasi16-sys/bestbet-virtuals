@@ -48,7 +48,10 @@ export default function MatchCard({ match, featured }: { match: Match; featured?
   return (
     <motion.div
       layout
-      className={clsx('card', featured && 'card-glow border-accent-500/20')}
+      className={clsx(
+        'glass-panel border border-dark-600/40 hover:border-primary-500/25 transition-all duration-300 hover:shadow-neon',
+        featured && 'border-accent-500/25 shadow-gold'
+      )}
     >
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3 sm:gap-5">

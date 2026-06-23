@@ -18,8 +18,11 @@ import profileRoutes from './routes/profile.js';
 import promotionRoutes from './routes/promotions.js';
 import { generalLimiter } from './middleware/rateLimit.js';
 import { initMatchScheduler, processScheduledMatches } from './services/schedulerService.js';
+import pool from './db/pool.js';
 
 dotenv.config();
+
+// Prevent accidental PORT leakage from frontend dev shell (e.g. PORT=3001)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../uploads');
@@ -33,9 +36,13 @@ const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
 function corsOrigin(origin, callback) {
   if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
     callback(null, true);
-  } else {
-    callback(null, allowedOrigins[0]);
+    return;
   }
+  if (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+    callback(null, true);
+    return;
+  }
+  callback(null, allowedOrigins[0]);
 }
 
 const app = express();
@@ -47,12 +54,31 @@ const io = new Server(httpServer, {
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
-app.use(generalLimiter);
 app.use('/uploads', express.static(uploadDir));
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'BestBet Virtuals API', env: process.env.NODE_ENV || 'development' }));
+app.get('/api/health', async (req, res) => {
+  try {
+    const db = await pool.query('SELECT 1 as ok');
+    const dbMode = process.env.USE_IN_MEMORY_DB === 'true' ? 'in-memory' : 'postgresql';
+    res.json({
+      status: 'ok',
+      service: 'SkyBet API',
+      brand: 'SkyBet',
+      tagline: 'Bet Smart, Win More',
+      env: process.env.NODE_ENV || 'development',
+      database: db.rows[0]?.ok === 1 ? 'connected' : 'error',
+      dbMode,
+      port: parseInt(process.env.PORT || '4000', 10),
+    });
+  } catch (err) {
+    res.status(503).json({ status: 'error', error: err.message });
+  }
+});
 
+// Auth routes before general rate limiter (login/register have their own authLimiter)
 app.use('/api/auth', authRoutes);
+
+app.use(generalLimiter);
 app.use('/api/matches', matchRoutes);
 app.use('/api/bets', betRoutes);
 app.use('/api/wallet', walletRoutes);
@@ -77,11 +103,17 @@ if (process.env.USE_IN_MEMORY_DB === 'true') {
 }
 
 initMatchScheduler(io);
-setInterval(processScheduledMatches, 30000);
+setInterval(processScheduledMatches, 5000);
 
-const PORT = parseInt(process.env.PORT || '4000');
-httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`🏆 BestBet Virtuals API on port ${PORT}`);
+// Use BACKEND_PORT so shell PORT=3001 (Next.js) never hijacks the API server
+const PORT = parseInt(process.env.BACKEND_PORT || process.env.PORT || '4000', 10);
+if (PORT >= 3000 && PORT <= 3010) {
+  console.warn(`⚠️ PORT ${PORT} looks like a frontend port — using 4000 for API`);
+}
+const listenPort = PORT >= 3000 && PORT <= 3010 ? 4000 : PORT;
+
+httpServer.listen(listenPort, '0.0.0.0', () => {
+  console.log(`🏆 SkyBet API on port ${listenPort}`);
   console.log(`   CORS: ${allowedOrigins.join(', ')}`);
 });
 

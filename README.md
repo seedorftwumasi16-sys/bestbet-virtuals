@@ -1,6 +1,6 @@
-# BestBet Virtuals
+# SkyBet
 
-A complete production-ready Instant Virtual Football betting platform inspired by SportyBet Instant Virtuals.
+Premium instant virtual football betting platform. **Bet Smart, Win More.**
 
 ## Features
 
@@ -56,8 +56,8 @@ npm run dev
 Backend runs on `http://localhost:4000`
 
 **Default accounts:**
-- Admin: `admin@bestbet.com` / `admin123`
-- Demo: `demo@bestbet.com` / `admin123` (GHS 1,000 balance)
+- Admin: `admin@skybet.com` / `admin123`
+- Demo: `demo@skybet.com` / `admin123` (GHS 1,000 balance)
 
 ### 3. Frontend Setup
 
@@ -233,4 +233,4 @@ bestbet-virtuals/
 
 ## License
 
-Proprietary - BestBet Virtuals
+Proprietary - SkyBet

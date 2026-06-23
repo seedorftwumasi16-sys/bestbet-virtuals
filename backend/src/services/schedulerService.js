@@ -3,6 +3,7 @@ import { updateLeaguePositions } from './leagueService.js';
 import { settleBetsForMatch } from './bettingService.js';
 import { getSetting } from './settingsService.js';
 import { randomPlayerName } from './oddsService.js';
+import { getMatchIntervalMs, getSimulationTickMs } from './matchIntervalService.js';
 import {
   generateNextMatches,
   startMatch,
@@ -12,6 +13,7 @@ import {
 let io = null;
 let matchCycleTimer = null;
 let liveSimulationTimers = {};
+let processingScheduled = false;
 
 const COMMENTARY = {
   goal: ['GOAL! What a finish!', 'GOOOAL! The crowd erupts!', 'Into the net! Brilliant strike!', 'Scores! The stadium is alive!'],
@@ -95,24 +97,40 @@ async function startMatchCycle() {
     console.error('Match cycle error:', err);
   }
 
-  const interval = parseInt(await getSetting('match_interval_minutes', '3'));
-  matchCycleTimer = setTimeout(startMatchCycle, interval * 60 * 1000);
+  const intervalMs = await getMatchIntervalMs();
+  matchCycleTimer = setTimeout(startMatchCycle, intervalMs);
 }
 
 export async function processScheduledMatches() {
-  const paused = await getSetting('competition_paused', 'false');
-  if (paused === 'true') return;
+  if (processingScheduled) return;
+  processingScheduled = true;
+  try {
+    const paused = await getSetting('competition_paused', 'false');
+    if (paused === 'true') return;
 
-  const res = await pool.query(
-    `SELECT id FROM matches WHERE status = 'scheduled' AND scheduled_at <= NOW()`
-  );
+    let res;
+    try {
+      res = await pool.query(
+        `SELECT id FROM matches WHERE status = 'scheduled' AND scheduled_at <= NOW() AND is_paused = false`
+      );
+    } catch {
+      res = await pool.query(
+        `SELECT id FROM matches WHERE status = 'scheduled' AND scheduled_at <= NOW()`
+      );
+    }
 
-  for (const row of res.rows) {
-    await runLiveSimulation(row.id);
+    for (const row of res.rows) {
+      if (liveSimulationTimers[row.id]) continue;
+      await runLiveSimulation(row.id);
+    }
+  } finally {
+    processingScheduled = false;
   }
 }
 
 export async function runLiveSimulation(matchId, manualData = null) {
+  if (liveSimulationTimers[matchId]) return;
+
   const manualMode = await getSetting('manual_mode', 'false');
   if (manualMode === 'true' && !manualData) {
     await startMatch(matchId);
@@ -227,7 +245,8 @@ export async function runLiveSimulation(matchId, manualData = null) {
     }
   };
 
-  liveSimulationTimers[matchId] = setInterval(tick, 1500);
+  const tickMs = await getSimulationTickMs();
+  liveSimulationTimers[matchId] = setInterval(tick, tickMs);
 }
 
 async function finalizeMatch(matchId, match, homeScore, awayScore, events) {
