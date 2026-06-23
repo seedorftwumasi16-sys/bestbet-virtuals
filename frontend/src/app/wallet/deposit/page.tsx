@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, PAYMENT_INSTRUCTIONS } from '@/lib/api';
+import { api, PAYMENT_INSTRUCTIONS, getConfiguredApiUrl } from '@/lib/api';
 
 const PAYMENT_METHODS = [
   { id: 'mtn_momo', label: 'MTN MoMo', color: 'bg-yellow-500' },
@@ -31,7 +31,7 @@ export default function DepositPage() {
       if (screenshot) formData.append('screenshot', screenshot);
 
       const token = localStorage.getItem('token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/wallet/deposit`, {
+      const res = await fetch(`${getConfiguredApiUrl()}/api/wallet/deposit`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -57,7 +57,7 @@ export default function DepositPage() {
             <input type="number" value={amount} onChange={(e) => setAmount(parseFloat(e.target.value))} className="input-field mt-1" min={5} required />
             <div className="flex gap-2 mt-2">
               {[10, 25, 50, 100, 200].map((v) => (
-                <button key={v} onClick={() => setAmount(v)} className="flex-1 bg-dark-700 hover:bg-dark-600 text-xs py-1 rounded">{v}</button>
+                <button key={v} type="button" onClick={() => setAmount(v)} className="flex-1 bg-dark-700 hover:bg-dark-600 text-xs py-1 rounded">{v}</button>
               ))}
             </div>
           </div>
@@ -68,6 +68,7 @@ export default function DepositPage() {
               {PAYMENT_METHODS.map((m) => (
                 <button
                   key={m.id}
+                  type="button"
                   onClick={() => setMethod(m.id)}
                   className={`p-3 rounded-xl border text-xs font-medium transition-all ${
                     method === m.id ? 'border-primary-500 bg-primary-500/10' : 'border-dark-600 bg-dark-700'

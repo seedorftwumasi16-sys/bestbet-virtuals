@@ -19,6 +19,7 @@ import { forceFinishMatch } from '../services/schedulerService.js';
 import { generateMatchOdds } from '../services/oddsService.js';
 import { buildPresetGoalEvents, buildPresetEvents } from '../services/liveMatchService.js';
 import adminLiveMatchRoutes from './adminLiveMatch.js';
+import adminPaymentsRoutes from './adminPayments.js';
 import superAdminRoutes from './adminSuper.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +34,7 @@ const upload = multer({ storage, limits: { fileSize: 2 * 1024 * 1024 } });
 const router = Router();
 router.use(authenticate, requireAdmin);
 router.use(adminLiveMatchRoutes);
+router.use(adminPaymentsRoutes);
 router.use(superAdminRoutes);
 
 // Dashboard analytics
@@ -289,71 +291,7 @@ router.put('/bets/:id/void', async (req, res) => {
   res.json({ message: 'Bet voided' });
 });
 
-// Deposit approvals
-router.get('/deposits', async (req, res) => {
-  const result = await pool.query(
-    `SELECT dr.*, u.email, u.first_name FROM deposit_requests dr
-     JOIN users u ON dr.user_id = u.id ORDER BY dr.created_at DESC LIMIT 100`
-  );
-  res.json(result.rows);
-});
-
-router.put('/deposits/:id/approve', async (req, res) => {
-  const dep = await pool.query('SELECT * FROM deposit_requests WHERE id = $1', [req.params.id]);
-  if (!dep.rows[0] || dep.rows[0].status !== 'pending') return res.status(400).json({ error: 'Invalid deposit' });
-
-  await pool.query(
-    'UPDATE deposit_requests SET status = $1, reviewed_by = $2, reviewed_at = NOW() WHERE id = $3',
-    ['approved', req.user.id, req.params.id]
-  );
-  await creditAccount(dep.rows[0].user_id, parseFloat(dep.rows[0].amount), 'deposit', req.params.id, 'Deposit approved');
-  await createNotification(dep.rows[0].user_id, 'deposit', 'Deposit Approved', `Your deposit of GHS ${dep.rows[0].amount} has been approved.`);
-  await auditLog(req.user.id, 'deposit_approved', 'deposit', req.params.id, {}, req.ip);
-  res.json({ message: 'Deposit approved' });
-});
-
-router.put('/deposits/:id/reject', async (req, res) => {
-  const { note } = req.body;
-  await pool.query(
-    'UPDATE deposit_requests SET status = $1, admin_note = $2, reviewed_by = $3, reviewed_at = NOW() WHERE id = $4',
-    ['rejected', note, req.user.id, req.params.id]
-  );
-  await auditLog(req.user.id, 'deposit_rejected', 'deposit', req.params.id, { note }, req.ip);
-  res.json({ message: 'Deposit rejected' });
-});
-
-// Withdrawal approvals
-router.get('/withdrawals', async (req, res) => {
-  const result = await pool.query(
-    `SELECT wr.*, u.email, u.first_name FROM withdrawal_requests wr
-     JOIN users u ON wr.user_id = u.id ORDER BY wr.created_at DESC LIMIT 100`
-  );
-  res.json(result.rows);
-});
-
-router.put('/withdrawals/:id/approve', async (req, res) => {
-  const wdr = await pool.query('SELECT * FROM withdrawal_requests WHERE id = $1', [req.params.id]);
-  if (!wdr.rows[0] || wdr.rows[0].status !== 'pending') return res.status(400).json({ error: 'Invalid withdrawal' });
-
-  await debitAccount(wdr.rows[0].user_id, parseFloat(wdr.rows[0].amount), 'withdrawal', req.params.id, 'Withdrawal approved');
-  await pool.query(
-    'UPDATE withdrawal_requests SET status = $1, reviewed_by = $2, reviewed_at = NOW() WHERE id = $3',
-    ['completed', req.user.id, req.params.id]
-  );
-  await createNotification(wdr.rows[0].user_id, 'withdrawal', 'Withdrawal Approved', `Your withdrawal of GHS ${wdr.rows[0].amount} has been processed.`);
-  await auditLog(req.user.id, 'withdrawal_approved', 'withdrawal', req.params.id, {}, req.ip);
-  res.json({ message: 'Withdrawal approved' });
-});
-
-router.put('/withdrawals/:id/reject', async (req, res) => {
-  const { note } = req.body;
-  await pool.query(
-    'UPDATE withdrawal_requests SET status = $1, admin_note = $2, reviewed_by = $3, reviewed_at = NOW() WHERE id = $4',
-    ['rejected', note, req.user.id, req.params.id]
-  );
-  await auditLog(req.user.id, 'withdrawal_rejected', 'withdrawal', req.params.id, { note }, req.ip);
-  res.json({ message: 'Withdrawal rejected' });
-});
+// Deposit/withdrawal routes moved to adminPayments.js
 
 // Audit logs
 router.get('/audit-logs', async (req, res) => {

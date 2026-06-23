@@ -72,7 +72,7 @@ app.get('/api/health', async (req, res) => {
     return res.status(bootstrapError ? 503 : 200).json({
       status: bootstrapError ? 'error' : 'starting',
       service: 'SkyBet API',
-      build: 'skybet-live-editor-v5',
+      build: 'skybet-payments-v6',
       database: bootstrapError ? 'error' : 'connecting',
       error: bootstrapError || undefined,
       port: parseInt(process.env.PORT || '4000', 10),
@@ -87,7 +87,7 @@ app.get('/api/health', async (req, res) => {
     res.json({
       status: 'ok',
       service: 'SkyBet API',
-      build: 'skybet-live-editor-v5',
+      build: 'skybet-payments-v6',
       brand: 'SkyBet',
       tagline: 'Bet Smart, Win More',
       env: process.env.NODE_ENV || 'development',

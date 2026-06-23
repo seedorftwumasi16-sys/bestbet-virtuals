@@ -13,6 +13,9 @@ import LeagueSection from './sections/LeagueSection';
 import OddsSection from './sections/OddsSection';
 import UsersSection from './sections/UsersSection';
 import PaymentsSection from './sections/PaymentsSection';
+import DepositsSection from './sections/DepositsSection';
+import WithdrawalsSection from './sections/WithdrawalsSection';
+import TransactionsSection from './sections/TransactionsSection';
 import BookingSection from './sections/BookingSection';
 import ContentSection from './sections/ContentSection';
 import WinnersSection from './sections/WinnersSection';
@@ -30,6 +33,9 @@ export type AdminSection =
   | 'leagues'
   | 'odds'
   | 'users'
+  | 'deposits'
+  | 'withdrawals'
+  | 'transactions'
   | 'payments'
   | 'booking'
   | 'content'
@@ -45,7 +51,10 @@ const NAV: { id: AdminSection; label: string; icon: string; roles?: string[] }[]
   { id: 'leagues', label: 'Leagues', icon: '🏆' },
   { id: 'odds', label: 'Odds', icon: '🎯' },
   { id: 'users', label: 'Users', icon: '👥' },
-  { id: 'payments', label: 'Payments', icon: '💳' },
+  { id: 'deposits', label: 'Deposits', icon: '💰' },
+  { id: 'withdrawals', label: 'Withdrawals', icon: '💸' },
+  { id: 'transactions', label: 'Transactions', icon: '📋' },
+  { id: 'payments', label: 'Payment Config', icon: '💳' },
   { id: 'booking', label: 'Booking Codes', icon: '🎫' },
   { id: 'content', label: 'Content', icon: '📢' },
   { id: 'winners', label: 'Recent Winners', icon: '🏅' },
@@ -157,6 +166,9 @@ export default function AdminShell() {
           {section === 'leagues' && <LeagueSection />}
           {section === 'odds' && <OddsSection />}
           {section === 'users' && <UsersSection userRole={user.role} />}
+          {section === 'deposits' && <DepositsSection />}
+          {section === 'withdrawals' && <WithdrawalsSection />}
+          {section === 'transactions' && <TransactionsSection />}
           {section === 'payments' && <PaymentsSection />}
           {section === 'booking' && <BookingSection />}
           {section === 'content' && <ContentSection />}

@@ -208,3 +208,16 @@ export const PAYMENT_INSTRUCTIONS = {
   telecel_cash: { number: '0201234567', name: 'SkyBet', network: 'Telecel Cash' },
   airteltigo_money: { number: '0271234567', name: 'SkyBet', network: 'AirtelTigo Money' },
 };
+
+export const PAYMENT_NETWORK_LABELS: Record<string, string> = {
+  mtn_momo: 'MTN MoMo',
+  telecel_cash: 'Telecel Cash',
+  airteltigo_money: 'AirtelTigo Money',
+};
+
+export function getAssetUrl(path: string | null | undefined): string {
+  if (!path) return '';
+  if (path.startsWith('http')) return path;
+  const base = getConfiguredApiUrl();
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
