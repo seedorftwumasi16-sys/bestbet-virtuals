@@ -9,6 +9,27 @@ function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+const ATTACK_LINES = [
+  '{player} breaks through the defence...',
+  '{player} drives into the box...',
+  'Dangerous attack from {team}...',
+  '{player} threads a pass into the area...',
+  '{team} building pressure in the final third...',
+];
+
+const CORNER_LINES = [
+  'Corner awarded to {team}...',
+  '{team} win a corner kick...',
+  'The ball goes out — corner to {team}.',
+];
+
+const GOAL_LINES = [
+  'GOAL! {player} scores from close range!',
+  'GOAL! {player} finds the back of the net!',
+  'GOAL! What a finish from {player}!',
+  'GOAL! {player} slots it home!',
+];
+
 const COMMENTARY = {
   goal: ['GOAL! What a finish!', 'GOOOAL! The crowd erupts!', 'Into the net! Brilliant strike!', 'Scores! The stadium is alive!'],
   yellow: ['Yellow card shown.', 'Caution for the player.', 'Booked for dissent.'],
@@ -131,13 +152,14 @@ export function buildEventTimeline({
     do { minute = randomInt(1, 90); } while (goalMinutes.has(minute));
     goalMinutes.add(minute);
     const player = scorerForTeam(squad, null);
+    const tmpl = pick(GOAL_LINES);
     events.push({
       team,
       minute,
       type: 'goal',
       player,
       playerId: squad.find((s) => s.name === player)?.id || null,
-      description: `⚽ GOAL! ${teamName} - ${player} scores! ${pick(COMMENTARY.goal)}`,
+      description: `⚽ ${tmpl.replace('{player}', player)} ${pick(COMMENTARY.goal)}`,
     });
   };
 
@@ -177,8 +199,16 @@ export function buildEventTimeline({
   for (let i = 0; i < randomInt(4, 10); i++) {
     events.push({ team: pick(['home', 'away']), minute: randomInt(1, 90), type: 'foul', description: pick(COMMENTARY.foul) });
   }
-  for (let i = 0; i < randomInt(3, 9); i++) {
-    events.push({ team: pick(['home', 'away']), minute: randomInt(1, 90), type: 'corner', description: pick(COMMENTARY.corner) });
+  for (let i = 0; i < randomInt(4, 10); i++) {
+    const team = pick(['home', 'away']);
+    const teamName = team === 'home' ? homeName : awayName;
+    const tmpl = pick(CORNER_LINES);
+    events.push({
+      team,
+      minute: randomInt(1, 90),
+      type: 'corner',
+      description: `🚩 ${tmpl.replace('{team}', teamName)}`,
+    });
   }
 
   events.push({ team: 'home', minute: 0, type: 'kickoff', description: pick(COMMENTARY.kickoff) });

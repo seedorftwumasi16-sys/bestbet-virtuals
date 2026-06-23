@@ -1,16 +1,35 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { getSharedSocket } from '@/lib/socket';
 import TeamLogo from '@/components/ui/TeamLogo';
+import StarRating from '@/components/ui/StarRating';
+import AnimatedPitch from './AnimatedPitch';
 
 interface MatchEvent {
   event_type: string;
   minute: number;
   team_name?: string;
+  player_name?: string;
   description?: string;
+}
+
+interface LiveStats {
+  shotsHome?: number;
+  shotsAway?: number;
+  shotsOnTargetHome?: number;
+  shotsOnTargetAway?: number;
+  cornersHome?: number;
+  cornersAway?: number;
+  yellowHome?: number;
+  yellowAway?: number;
+  redHome?: number;
+  redAway?: number;
+  foulsHome?: number;
+  foulsAway?: number;
+  xgHome?: number;
+  xgAway?: number;
 }
 
 interface MatchData {
@@ -22,12 +41,18 @@ interface MatchData {
     away_short: string;
     home_logo?: string;
     away_logo?: string;
+    home_star_rating?: number;
+    away_star_rating?: number;
     home_score: number;
     away_score: number;
     possession_home: number;
     possession_away: number;
     shots_home: number;
     shots_away: number;
+    shots_on_target_home?: number;
+    shots_on_target_away?: number;
+    xg_home?: number;
+    xg_away?: number;
     corners_home: number;
     corners_away: number;
     yellow_cards_home: number;
@@ -41,6 +66,21 @@ interface MatchData {
   events: MatchEvent[];
 }
 
+function formatTimer(minute: number, phase: string): string {
+  if (phase === 'halftime') return '45:00';
+  const m = Math.min(90, Math.max(0, minute));
+  return `${String(m).padStart(2, '0')}:00`;
+}
+
+function phaseBadge(phase: string): { label: string; className: string } {
+  if (phase === 'halftime') return { label: 'HALF TIME', className: 'badge-halftime' };
+  if (phase === 'fulltime' || phase === 'finished') return { label: 'FULL TIME', className: 'badge-ft' };
+  if (['live', 'kickoff', 'first_half', 'second_half', 'walkout'].includes(phase)) {
+    return { label: 'LIVE', className: 'badge-live-neon' };
+  }
+  return { label: phase.toUpperCase(), className: 'text-gray-400 text-xs font-bold' };
+}
+
 export default function MatchCenter({ matchId }: { matchId: string }) {
   const [data, setData] = useState<MatchData | null>(null);
   const [minute, setMinute] = useState(0);
@@ -48,50 +88,10 @@ export default function MatchCenter({ matchId }: { matchId: string }) {
   const [commentary, setCommentary] = useState('');
   const [highlights, setHighlights] = useState<MatchEvent[]>([]);
   const [goalFlash, setGoalFlash] = useState(false);
+  const [attackDirection, setAttackDirection] = useState<'home' | 'away'>('home');
+  const [liveStats, setLiveStats] = useState<LiveStats>({});
 
-  useEffect(() => {
-    loadMatch();
-    const socket = getSharedSocket();
-
-    socket.on('match:update', (update: {
-      matchId: string; minute: number; phase?: string;
-      homeScore?: number; awayScore?: number;
-      events?: MatchEvent[]; commentary?: string;
-    }) => {
-      if (update.matchId !== matchId) return;
-      if (update.phase) setPhase(update.phase);
-      if (update.minute) setMinute(update.minute);
-      if (update.commentary) setCommentary(update.commentary);
-      if (update.homeScore !== undefined) {
-        setData((prev) => prev ? {
-          ...prev,
-          match: { ...prev.match, home_score: update.homeScore!, away_score: update.awayScore! },
-        } : prev);
-      }
-      if (update.events?.length) {
-        setHighlights((prev) => [...prev, ...update.events!]);
-      }
-    });
-
-    socket.on('match:goal', ({ matchId: id }: { matchId: string }) => {
-      if (id === matchId) {
-        setGoalFlash(true);
-        setTimeout(() => setGoalFlash(false), 2000);
-      }
-    });
-
-    socket.on('match:finished', ({ matchId: id }: { matchId: string }) => {
-      if (id === matchId) loadMatch();
-    });
-
-    return () => {
-      socket.off('match:update');
-      socket.off('match:goal');
-      socket.off('match:finished');
-    };
-  }, [matchId]);
-
-  const loadMatch = async () => {
+  const loadMatch = useCallback(async () => {
     try {
       const res = await api<MatchData>(`/matches/${matchId}`);
       setData(res);
@@ -99,170 +99,186 @@ export default function MatchCenter({ matchId }: { matchId: string }) {
     } catch (err) {
       console.error(err);
     }
-  };
+  }, [matchId]);
+
+  useEffect(() => {
+    loadMatch();
+    const socket = getSharedSocket();
+
+    const onUpdate = (update: {
+      matchId: string; minute: number; phase?: string;
+      homeScore?: number; awayScore?: number;
+      events?: MatchEvent[]; commentary?: string;
+      attackDirection?: 'home' | 'away';
+      possessionHome?: number;
+      stats?: LiveStats;
+    }) => {
+      if (update.matchId !== matchId) return;
+      if (update.phase) setPhase(update.phase);
+      if (update.minute !== undefined) setMinute(update.minute);
+      if (update.commentary) setCommentary(update.commentary);
+      if (update.attackDirection) setAttackDirection(update.attackDirection);
+      if (update.stats) setLiveStats(update.stats);
+      if (update.homeScore !== undefined) {
+        setData((prev) => prev ? {
+          ...prev,
+          match: {
+            ...prev.match,
+            home_score: update.homeScore!,
+            away_score: update.awayScore!,
+            possession_home: update.possessionHome ?? prev.match.possession_home,
+            possession_away: update.possessionHome !== undefined ? 100 - update.possessionHome : prev.match.possession_away,
+            shots_home: update.stats?.shotsHome ?? prev.match.shots_home,
+            shots_away: update.stats?.shotsAway ?? prev.match.shots_away,
+            shots_on_target_home: update.stats?.shotsOnTargetHome ?? prev.match.shots_on_target_home,
+            shots_on_target_away: update.stats?.shotsOnTargetAway ?? prev.match.shots_on_target_away,
+            xg_home: update.stats?.xgHome ?? prev.match.xg_home,
+            xg_away: update.stats?.xgAway ?? prev.match.xg_away,
+            corners_home: update.stats?.cornersHome ?? prev.match.corners_home,
+            corners_away: update.stats?.cornersAway ?? prev.match.corners_away,
+            yellow_cards_home: update.stats?.yellowHome ?? prev.match.yellow_cards_home,
+            yellow_cards_away: update.stats?.yellowAway ?? prev.match.yellow_cards_away,
+            red_cards_home: update.stats?.redHome ?? prev.match.red_cards_home,
+            red_cards_away: update.stats?.redAway ?? prev.match.red_cards_away,
+            fouls_home: update.stats?.foulsHome ?? prev.match.fouls_home,
+            fouls_away: update.stats?.foulsAway ?? prev.match.fouls_away,
+          },
+        } : prev);
+      }
+      if (update.events?.length) {
+        setHighlights((prev) => [...prev, ...update.events!]);
+      }
+    };
+
+    socket.on('match:update', onUpdate);
+    socket.on('match:goal', ({ matchId: id }: { matchId: string }) => {
+      if (id === matchId) {
+        setGoalFlash(true);
+        setTimeout(() => setGoalFlash(false), 2500);
+      }
+    });
+    socket.on('match:finished', ({ matchId: id }: { matchId: string }) => {
+      if (id === matchId) loadMatch();
+    });
+
+    return () => {
+      socket.off('match:update', onUpdate);
+      socket.off('match:goal');
+      socket.off('match:finished');
+    };
+  }, [matchId, loadMatch]);
 
   if (!data) {
     return (
-      <div className="glass-panel p-8 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+      <div className="premium-match-shell p-12 flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   const m = data.match;
-  const goalEvents = highlights.filter((e) => e.event_type === 'goal' || (e.description || '').includes('GOAL'));
+  const badge = phaseBadge(phase);
+  const possession = m.possession_home || 50;
+
+  const stats = [
+    { label: 'Shots', h: liveStats.shotsHome ?? m.shots_home, a: liveStats.shotsAway ?? m.shots_away },
+    { label: 'On Target', h: liveStats.shotsOnTargetHome ?? m.shots_on_target_home ?? 0, a: liveStats.shotsOnTargetAway ?? m.shots_on_target_away ?? 0 },
+    { label: 'Corners', h: liveStats.cornersHome ?? m.corners_home, a: liveStats.cornersAway ?? m.corners_away },
+    { label: 'Yellow', h: liveStats.yellowHome ?? m.yellow_cards_home, a: liveStats.yellowAway ?? m.yellow_cards_away, emoji: '🟨' },
+    { label: 'Red', h: liveStats.redHome ?? m.red_cards_home ?? 0, a: liveStats.redAway ?? m.red_cards_away ?? 0, emoji: '🟥' },
+    { label: 'Fouls', h: liveStats.foulsHome ?? m.fouls_home ?? 0, a: liveStats.foulsAway ?? m.fouls_away ?? 0 },
+    { label: 'xG', h: Number(liveStats.xgHome ?? m.xg_home ?? 0).toFixed(1), a: Number(liveStats.xgAway ?? m.xg_away ?? 0).toFixed(1) },
+  ];
 
   return (
-    <div className="glass-panel overflow-hidden border border-primary-500/20 shadow-neon">
-      {/* Header */}
-      <div className="relative px-4 py-3 border-b border-dark-600/40 bg-gradient-to-r from-primary-500/10 via-dark-800/50 to-accent-500/5">
+    <div className="premium-match-shell overflow-hidden">
+      <div className="relative px-4 sm:px-6 py-4 border-b border-primary-500/15 bg-gradient-to-r from-[#0a1628] via-[#0d1a2d] to-[#0a1628]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Match Center</span>
-            {phase === 'live' || phase === 'kickoff' ? (
-              <span className="badge-live flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse-live" />
-                LIVE
-              </span>
-            ) : (
-              <span className="text-accent-500 text-xs font-bold uppercase">{phase}</span>
-            )}
+            <span className={badge.className}>{badge.label}</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">SkyBet Virtuals</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-gray-500 text-xs">SkyBet Stadium</span>
-            <span className="font-mono text-primary-500 font-bold text-sm bg-dark-700/80 px-2 py-0.5 rounded-lg">
-              {minute}&apos;
-            </span>
+          <div className="font-mono text-lg sm:text-xl font-black text-primary-500 tabular-nums glow-text-green">
+            {formatTimer(minute, phase)}
           </div>
         </div>
       </div>
 
-      {/* Scoreboard */}
-      <div className={`px-4 sm:px-8 py-8 sm:py-10 transition-colors duration-500 ${goalFlash ? 'bg-accent-500/15' : 'bg-gradient-to-b from-dark-900/40 to-transparent'}`}>
-        <div className="flex items-center justify-center gap-6 sm:gap-16">
+      <div className={`px-4 sm:px-8 py-8 sm:py-10 transition-colors duration-700 ${goalFlash ? 'bg-primary-500/10' : ''}`}>
+        <div className="flex items-center justify-between gap-4 max-w-3xl mx-auto">
           <TeamBlock
             name={m.home_team_name}
             short={m.home_short}
             logoUrl={m.home_logo}
+            stars={m.home_star_rating}
             align="left"
           />
-          <div className="text-center relative min-w-[120px]">
+          <div className="text-center shrink-0">
             <p
-              className={`text-5xl sm:text-7xl lg:text-8xl font-black tabular-nums tracking-wider transition-colors duration-300 ${
-                goalFlash ? 'text-accent-500' : 'text-white'
+              className={`score-glow text-5xl sm:text-7xl font-black tabular-nums tracking-wider transition-colors duration-500 ${
+                goalFlash ? 'text-accent-400 scale-105' : 'text-white'
               }`}
-              style={{ textShadow: goalFlash ? '0 0 30px rgba(255,215,0,0.5)' : '0 0 20px rgba(0,230,118,0.2)' }}
             >
               {m.home_score}
-              <span className="text-gray-600 mx-2">:</span>
+              <span className="text-primary-500/60 mx-2 sm:mx-4">-</span>
               {m.away_score}
             </p>
             {goalFlash && (
-              <p className="text-accent-500 font-black text-sm mt-1 tracking-widest animate-pulse">
-                GOAL!
-              </p>
+              <p className="text-accent-400 font-black text-sm mt-2 tracking-[0.3em] animate-pulse">GOOOAL!</p>
             )}
           </div>
           <TeamBlock
             name={m.away_team_name}
             short={m.away_short}
             logoUrl={m.away_logo}
+            stars={m.away_star_rating}
             align="right"
           />
         </div>
       </div>
 
-      {/* Pitch visualization */}
-      <div className="relative mx-4 mb-4 h-24 sm:h-28 rounded-xl overflow-hidden border border-primary-500/20 bg-gradient-to-b from-green-800/40 to-green-950/60">
-        <div className="absolute inset-0 opacity-20">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 border-2 border-white/30 rounded-full" />
-          <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/20" />
-        </div>
-        {phase === 'live' && (
-          <motion.div
-            className="absolute w-3 h-3 bg-primary-500 rounded-full shadow-neon top-1/2 -translate-y-1/2"
-            animate={{ left: ['10%', '80%', '20%', '65%', '45%'] }}
-            transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-          />
-        )}
-        <div className="absolute top-2 left-3 right-3 flex justify-between opacity-40">
-          {Array.from({ length: 16 }).map((_, i) => (
-            <motion.div
-              key={i}
-              className="w-1 h-1 bg-white rounded-full"
-              animate={{ opacity: [0.2, 1, 0.2] }}
-              transition={{ delay: i * 0.15, repeat: Infinity, duration: 2 }}
-            />
-          ))}
-        </div>
+      <div className="px-4 pb-4">
+        <AnimatedPitch
+          minute={minute}
+          phase={phase}
+          possessionHome={possession}
+          attackDirection={attackDirection}
+          goalFlash={goalFlash}
+          homeShort={m.home_short}
+          awayShort={m.away_short}
+        />
       </div>
 
-      {/* Commentary */}
-      <AnimatePresence>
-        {commentary && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0 }}
-            className="mx-4 mb-4"
-          >
-            <div className="bg-dark-700/50 rounded-xl px-4 py-3 border border-primary-500/15">
-              <div className="flex items-start gap-2">
-                <span className="text-accent-500 text-[10px] font-black uppercase tracking-wider shrink-0 mt-0.5">
-                  📢 Live
-                </span>
-                <p className="text-gray-200 text-sm leading-relaxed">{commentary}</p>
-              </div>
+      {commentary && (
+        <div className="mx-4 mb-4">
+          <div className="glass-commentary px-4 py-3 rounded-xl">
+            <div className="flex items-start gap-2">
+              <span className="text-primary-500 text-[10px] font-black uppercase tracking-wider shrink-0 mt-0.5">📢 Live</span>
+              <p className="text-gray-100 text-sm leading-relaxed">{commentary}</p>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Stats */}
-      <div className="px-4 pb-4 space-y-3">
-        <StatBar label="Possession" home={m.possession_home} away={m.possession_away} suffix="%" />
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <MiniStat label="Shots" home={m.shots_home} away={m.shots_away} />
-          <MiniStat label="Corners" home={m.corners_home} away={m.corners_away} />
-          <MiniStat label="Yellow" home={m.yellow_cards_home} away={m.yellow_cards_away} emoji="🟨" />
-          <MiniStat label="Red" home={m.red_cards_home || 0} away={m.red_cards_away || 0} emoji="🟥" />
-        </div>
-      </div>
-
-      {/* Goal timeline */}
-      {goalEvents.length > 0 && (
-        <div className="px-4 pb-3 border-t border-dark-600/40 pt-3">
-          <h4 className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2">Goal Timeline</h4>
-          <div className="flex flex-wrap gap-2">
-            {goalEvents.map((e, i) => (
-              <motion.span
-                key={i}
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                className="text-xs bg-primary-500/15 text-primary-500 border border-primary-500/30 px-2.5 py-1 rounded-lg font-semibold"
-              >
-                ⚽ {e.minute}&apos;
-              </motion.span>
-            ))}
           </div>
         </div>
       )}
 
-      {/* Match timeline / commentary log */}
+      <div className="px-4 pb-4">
+        <StatBar label="Possession" home={possession} away={100 - possession} suffix="%" />
+      </div>
+
+      <div className="px-4 pb-5 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+        {stats.map((s) => (
+          <StatCard key={s.label} {...s} />
+        ))}
+      </div>
+
       {highlights.length > 0 && (
-        <div className="border-t border-dark-600/40 px-4 py-3 bg-dark-900/40">
-          <h4 className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2">Match Events</h4>
-          <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-            {highlights.slice(-15).reverse().map((e, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="text-xs flex gap-2 py-1 border-b border-dark-700/50 last:border-0"
-              >
-                <span className="text-accent-500 font-mono font-bold w-7 shrink-0">{e.minute}&apos;</span>
+        <div className="border-t border-white/5 px-4 py-4 bg-black/20 max-h-44 overflow-y-auto">
+          <h4 className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-2">Match Commentary</h4>
+          <div className="space-y-1.5">
+            {highlights.slice(-12).reverse().map((e, i) => (
+              <div key={`${e.minute}-${i}`} className="text-xs flex gap-2 py-1 border-b border-white/5 last:border-0">
+                <span className="text-primary-500 font-mono font-bold w-8 shrink-0">{e.minute}&apos;</span>
                 <span className="text-gray-300 leading-relaxed">{e.description || e.event_type}</span>
-              </motion.div>
+              </div>
             ))}
           </div>
         </div>
@@ -272,23 +288,15 @@ export default function MatchCenter({ matchId }: { matchId: string }) {
 }
 
 function TeamBlock({
-  name,
-  short,
-  logoUrl,
-  align,
+  name, short, logoUrl, stars, align,
 }: {
-  name: string;
-  short: string;
-  logoUrl?: string;
-  align: 'left' | 'right';
+  name: string; short: string; logoUrl?: string; stars?: number; align: 'left' | 'right';
 }) {
   return (
-    <div className={`flex items-center gap-3 ${align === 'right' ? 'flex-row-reverse text-right' : ''}`}>
+    <div className={`flex flex-col items-center gap-2 flex-1 min-w-0 ${align === 'right' ? 'text-right' : 'text-left'}`}>
       <TeamLogo short={short} logoUrl={logoUrl} size="xl" />
-      <div className="min-w-0 max-w-[100px] sm:max-w-[140px]">
-        <p className="font-bold text-white text-sm truncate">{name}</p>
-        <p className="text-gray-500 text-xs">{short}</p>
-      </div>
+      <p className="font-bold text-white text-sm sm:text-base truncate max-w-[120px]">{name}</p>
+      {stars && <StarRating rating={stars} size="md" />}
     </div>
   );
 }
@@ -297,43 +305,27 @@ function StatBar({ label, home, away, suffix = '' }: { label: string; home: numb
   const total = home + away || 1;
   return (
     <div>
-      <div className="flex justify-between text-xs mb-1.5">
-        <span className="text-primary-500 font-bold">{home}{suffix}</span>
-        <span className="text-gray-500 font-medium">{label}</span>
-        <span className="text-blue-400 font-bold">{away}{suffix}</span>
+      <div className="flex justify-between text-xs mb-1.5 font-semibold">
+        <span className="text-primary-500">{home}{suffix}</span>
+        <span className="text-gray-500">{label}</span>
+        <span className="text-blue-400">{away}{suffix}</span>
       </div>
-      <div className="flex h-2 rounded-full overflow-hidden bg-dark-700 gap-0.5">
-        <div
-          className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-l-full transition-[width] duration-500 ease-out"
-          style={{ width: `${(home / total) * 100}%` }}
-        />
-        <div
-          className="bg-gradient-to-r from-blue-600 to-blue-400 rounded-r-full transition-[width] duration-500 ease-out"
-          style={{ width: `${(away / total) * 100}%` }}
-        />
+      <div className="flex h-2.5 rounded-full overflow-hidden bg-dark-800 gap-px">
+        <div className="bg-gradient-to-r from-primary-600 to-primary-400 rounded-l-full transition-[width] duration-700 ease-out" style={{ width: `${(home / total) * 100}%` }} />
+        <div className="bg-gradient-to-r from-blue-600 to-blue-400 rounded-r-full transition-[width] duration-700 ease-out" style={{ width: `${(away / total) * 100}%` }} />
       </div>
     </div>
   );
 }
 
-function MiniStat({
-  label,
-  home,
-  away,
-  emoji,
-}: {
-  label: string;
-  home: number;
-  away: number;
-  emoji?: string;
-}) {
+function StatCard({ label, h, a, emoji }: { label: string; h: number | string; a: number | string; emoji?: string }) {
   return (
-    <div className="bg-dark-700/40 rounded-xl p-2.5 text-center border border-dark-600/30">
-      <p className="text-[10px] text-gray-500 mb-1">{emoji ? `${emoji} ${label}` : label}</p>
-      <div className="flex justify-between font-bold text-sm">
-        <span className="text-primary-500">{home}</span>
+    <div className="stat-card-premium text-center">
+      <p className="text-[9px] text-gray-500 uppercase tracking-wide mb-1">{emoji ? `${emoji} ` : ''}{label}</p>
+      <div className="flex justify-between font-bold text-sm tabular-nums">
+        <span className="text-primary-500">{h}</span>
         <span className="text-gray-600">-</span>
-        <span className="text-blue-400">{away}</span>
+        <span className="text-blue-400">{a}</span>
       </div>
     </div>
   );

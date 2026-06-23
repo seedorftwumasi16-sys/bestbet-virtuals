@@ -174,7 +174,9 @@ export async function getMatchWithDetails(matchId) {
   const matchRes = await pool.query(
     `SELECT m.*,
       ht.name as home_team_name, ht.short_name as home_short, ht.logo_url as home_logo,
-      at.name as away_team_name, at.short_name as away_short, at.logo_url as away_logo
+      ht.star_rating as home_star_rating, ht.attack_rating as home_attack, ht.defense_rating as home_defense,
+      at.name as away_team_name, at.short_name as away_short, at.logo_url as away_logo,
+      at.star_rating as away_star_rating, at.attack_rating as away_attack, at.defense_rating as away_defense
      FROM matches m
      JOIN teams ht ON m.home_team_id = ht.id
      JOIN teams at ON m.away_team_id = at.id
@@ -194,7 +196,9 @@ export async function getUpcomingMatches() {
   const res = await pool.query(
     `SELECT m.*,
       ht.name as home_team_name, ht.short_name as home_short, ht.logo_url as home_logo,
-      at.name as away_team_name, at.short_name as away_short, at.logo_url as away_logo
+      ht.star_rating as home_star_rating, ht.attack_rating as home_attack, ht.defense_rating as home_defense,
+      at.name as away_team_name, at.short_name as away_short, at.logo_url as away_logo,
+      at.star_rating as away_star_rating, at.attack_rating as away_attack, at.defense_rating as away_defense
      FROM matches m
      JOIN teams ht ON m.home_team_id = ht.id
      JOIN teams at ON m.away_team_id = at.id
@@ -208,7 +212,9 @@ export async function getLiveMatches() {
   const res = await pool.query(
     `SELECT m.*,
       ht.name as home_team_name, ht.short_name as home_short, ht.logo_url as home_logo,
-      at.name as away_team_name, at.short_name as away_short, at.logo_url as away_logo
+      ht.star_rating as home_star_rating, ht.attack_rating as home_attack, ht.defense_rating as home_defense,
+      at.name as away_team_name, at.short_name as away_short, at.logo_url as away_logo,
+      at.star_rating as away_star_rating, at.attack_rating as away_attack, at.defense_rating as away_defense
      FROM matches m
      JOIN teams ht ON m.home_team_id = ht.id
      JOIN teams at ON m.away_team_id = at.id
@@ -221,8 +227,16 @@ export async function getLiveMatches() {
 export async function getRecentResults() {
   const res = await pool.query(
     `SELECT m.*,
-      ht.name as home_team_name, ht.short_name as home_short,
-      at.name as away_team_name, at.short_name as away_short
+      ht.name as home_team_name, ht.short_name as home_short, ht.logo_url as home_logo,
+      ht.star_rating as home_star_rating,
+      at.name as away_team_name, at.short_name as away_short, at.logo_url as away_logo,
+      at.star_rating as away_star_rating,
+      CASE WHEN m.home_score > m.away_score THEN ht.name
+           WHEN m.away_score > m.home_score THEN at.name
+           ELSE 'Draw' END AS winning_team,
+      (SELECT me.player_name FROM match_events me
+       WHERE me.match_id = m.id AND me.event_type = 'goal' AND me.player_name IS NOT NULL
+       ORDER BY me.minute ASC LIMIT 1) AS top_scorer
      FROM matches m
      JOIN teams ht ON m.home_team_id = ht.id
      JOIN teams at ON m.away_team_id = at.id

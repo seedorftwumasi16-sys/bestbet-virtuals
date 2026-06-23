@@ -2,8 +2,32 @@ import { Router } from 'express';
 import { authenticate, requireActiveUser } from '../middleware/auth.js';
 import { betLimiter } from '../middleware/rateLimit.js';
 import { placeBet, getUserBets, getBetDetails, getBetByBookingCode } from '../services/bettingService.js';
+import { saveBetslip, getBetslipByCode } from '../services/betslipService.js';
 
 const router = Router();
+
+router.post('/slip', async (req, res) => {
+  try {
+    const { selections, stake, code } = req.body;
+    if (!Array.isArray(selections) || selections.length === 0) {
+      return res.status(400).json({ error: 'Selections required' });
+    }
+    const result = await saveBetslip(selections, parseFloat(stake) || 10, code || null);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/slip/:code', async (req, res) => {
+  try {
+    const slip = await getBetslipByCode(req.params.code);
+    if (!slip) return res.status(404).json({ error: 'Booking code not found' });
+    res.json(slip);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.post('/place', authenticate, requireActiveUser, betLimiter, async (req, res) => {
   try {
@@ -38,6 +62,8 @@ router.get('/:id', authenticate, async (req, res) => {
 
 router.get('/booking/:code', async (req, res) => {
   try {
+    const slip = await getBetslipByCode(req.params.code);
+    if (slip) return res.json(slip);
     const result = await getBetByBookingCode(req.params.code);
     if (!result) return res.status(404).json({ error: 'Booking code not found' });
     res.json(result);

@@ -127,6 +127,10 @@ async function bootstrap() {
     }
     dbReady = true;
     initMatchScheduler(io);
+    const { initWinnerRotation, setWinnersIo, seedDefaultWinners } = await import('./services/winnersService.js');
+    setWinnersIo(io);
+    await seedDefaultWinners();
+    initWinnerRotation(io);
     setInterval(() => {
       processScheduledMatches().catch((err) => console.error('Scheduler poll error:', err.message));
     }, 5000);

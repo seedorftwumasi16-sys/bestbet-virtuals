@@ -88,4 +88,7 @@ export async function runProductionSeed() {
   }
 
   console.log('✅ Production seed complete');
+
+  const { seedDefaultWinners } = await import('../services/winnersService.js');
+  await seedDefaultWinners();
 }

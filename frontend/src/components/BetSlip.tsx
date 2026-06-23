@@ -5,19 +5,28 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useBetSlip } from '@/context/BetSlipContext';
 import { useAuth } from '@/context/AuthContext';
 import { api, formatCurrency, formatOdds, MARKET_LABELS, SELECTION_LABELS } from '@/lib/api';
+import { copyToClipboard } from '@/lib/bookingCode';
 import { IconCard, IconFootball } from '@/components/icons/FootballIcons';
 
 export default function BetSlip({ embedded = false }: { embedded?: boolean }) {
-  const { selections, removeSelection, clearSelections, totalOdds, stake, setStake } = useBetSlip();
+  const { selections, removeSelection, clearSelections, totalOdds, stake, setStake, bookingCode, setBookingCode } = useBetSlip();
   const { user, refreshUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [bookingCode, setBookingCode] = useState('');
+  const [placedCode, setPlacedCode] = useState('');
+  const [copied, setCopied] = useState(false);
 
+  const displayCode = placedCode || bookingCode;
   const potentialWin = Math.round(stake * totalOdds * 100) / 100;
-  const qrUrl = bookingCode
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(bookingCode)}&bgcolor=0A0F14&color=00E676`
+  const qrUrl = displayCode
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(displayCode)}&bgcolor=0A0F14&color=00E676`
     : null;
+
+  const copyCode = async () => {
+    if (!displayCode) return;
+    const ok = await copyToClipboard(displayCode);
+    if (ok) { setCopied(true); setTimeout(() => setCopied(false), 2000); }
+  };
 
   const placeBet = async () => {
     if (!user) { setMessage('Please login to place bets'); return; }
@@ -36,7 +45,8 @@ export default function BetSlip({ embedded = false }: { embedded?: boolean }) {
           stake,
         }),
       });
-      setBookingCode(result.bet.booking_code);
+      setPlacedCode(result.bet.booking_code);
+      setBookingCode(null);
       clearSelections();
       await refreshUser();
       setMessage('Bet placed successfully!');
@@ -72,6 +82,18 @@ export default function BetSlip({ embedded = false }: { embedded?: boolean }) {
             {selections.length}
           </motion.span>
         </div>
+
+        {displayCode && selections.length > 0 && (
+          <div className="mb-4 flex items-center justify-between bg-dark-800/80 rounded-xl px-3 py-2 border border-primary-500/20">
+            <div>
+              <p className="text-[9px] text-gray-500 uppercase tracking-wider">Booking Code</p>
+              <p className="font-mono text-accent-400 font-black text-lg tracking-widest">{displayCode}</p>
+            </div>
+            <button type="button" onClick={copyCode} className="btn-secondary text-xs py-1.5 px-3">
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          </div>
+        )}
 
         <AnimatePresence mode="popLayout">
           {selections.length === 0 ? (
@@ -199,14 +221,14 @@ export default function BetSlip({ embedded = false }: { embedded?: boolean }) {
           </p>
         )}
 
-        {bookingCode && (
+        {placedCode && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className="mt-4 bg-dark-700/50 rounded-xl p-4 text-center border border-accent-500/30 shadow-gold"
           >
-            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wider font-semibold">Booking Code</p>
-            <p className="font-mono text-accent-500 font-black text-2xl tracking-widest">{bookingCode}</p>
+            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wider font-semibold">Bet Placed — Booking Code</p>
+            <p className="font-mono text-accent-500 font-black text-2xl tracking-widest">{placedCode}</p>
             {qrUrl && (
               <img src={qrUrl} alt="QR Code" className="mx-auto mt-3 rounded-xl border border-dark-600" width={120} height={120} />
             )}

@@ -10,6 +10,13 @@ import { createScheduledMatch } from '../services/matchEngine.js';
 import { voidBet } from '../services/bettingService.js';
 import { createNotification } from '../services/notificationService.js';
 import { requireSuperAdmin, requireAdminRole } from '../middleware/roles.js';
+import {
+  listAdminWinners,
+  createWinner,
+  updateWinner,
+  deleteWinner,
+  emitWinnersUpdate,
+} from '../services/winnersService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads');
@@ -19,6 +26,12 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, `banner-${Date.now()}${path.extname(file.originalname)}`),
 });
 const upload = multer({ storage, limits: { fileSize: 3 * 1024 * 1024 } });
+
+const winnerStorage = multer.diskStorage({
+  destination: uploadDir,
+  filename: (req, file, cb) => cb(null, `winner-${Date.now()}${path.extname(file.originalname)}`),
+});
+const winnerUpload = multer({ storage: winnerStorage, limits: { fileSize: 2 * 1024 * 1024 } });
 
 const router = Router();
 
@@ -511,6 +524,91 @@ router.get('/roles', (_req, res) => {
     { id: 'manager', label: 'Manager', description: 'View analytics and approve payments' },
     { id: 'user', label: 'User', description: 'Standard betting account' },
   ]);
+});
+
+// ─── Recent Winners Manager ──────────────────────────────────────
+router.get('/recent-winners', async (req, res) => {
+  try {
+    const winners = await listAdminWinners();
+    const settings = await getAllSettings();
+    res.json({
+      winners,
+      auto_rotation: settings.winners_auto_rotation === 'true',
+      rotation_minutes: parseInt(settings.winners_rotation_minutes || '2', 10),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/recent-winners', async (req, res) => {
+  try {
+    const winner = await createWinner(req.body);
+    emitWinnersUpdate();
+    await auditLog(req.user.id, 'winner_created', 'recent_winner', winner.id, req.body, req.ip);
+    res.status(201).json(winner);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/recent-winners/:id', async (req, res) => {
+  try {
+    const winner = await updateWinner(req.params.id, req.body);
+    emitWinnersUpdate();
+    await auditLog(req.user.id, 'winner_updated', 'recent_winner', req.params.id, req.body, req.ip);
+    res.json(winner);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/recent-winners/:id', async (req, res) => {
+  try {
+    await deleteWinner(req.params.id);
+    emitWinnersUpdate();
+    await auditLog(req.user.id, 'winner_deleted', 'recent_winner', req.params.id, {}, req.ip);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/recent-winners/:id/pin', async (req, res) => {
+  try {
+    const { pinned } = req.body;
+    const winner = await updateWinner(req.params.id, { is_pinned: pinned });
+    emitWinnersUpdate();
+    res.json(winner);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/recent-winners/:id/avatar', winnerUpload.single('avatar'), async (req, res) => {
+  try {
+    const profile_picture = req.file ? `/uploads/${req.file.filename}` : req.body.profile_picture;
+    const winner = await updateWinner(req.params.id, { profile_picture });
+    emitWinnersUpdate();
+    res.json(winner);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.put('/recent-winners/settings/rotation', async (req, res) => {
+  try {
+    const { auto_rotation, rotation_minutes } = req.body;
+    if (auto_rotation !== undefined) {
+      await updateSetting('winners_auto_rotation', auto_rotation ? 'true' : 'false');
+    }
+    if (rotation_minutes !== undefined) {
+      await updateSetting('winners_rotation_minutes', String(rotation_minutes));
+    }
+    res.json({ message: 'Winner rotation settings updated' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 export default router;

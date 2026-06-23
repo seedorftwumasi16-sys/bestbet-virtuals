@@ -26,6 +26,12 @@ export async function runMigrations() {
 
     const playersSchema = fs.readFileSync(path.join(__dirname, 'schema-players.sql'), 'utf8');
     await client.query(playersSchema);
+
+    const betslipSchema = fs.readFileSync(path.join(__dirname, 'schema-betslip.sql'), 'utf8');
+    await client.query(betslipSchema);
+
+    const winnersSchema = fs.readFileSync(path.join(__dirname, 'schema-winners.sql'), 'utf8');
+    await client.query(winnersSchema);
     console.log('✅ Database schema ready');
   } catch (err) {
     if (err.code === '53100') {

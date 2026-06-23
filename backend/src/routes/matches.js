@@ -179,6 +179,33 @@ router.get('/league-table', async (req, res) => {
   }
 });
 
+router.get('/players', async (req, res) => {
+  try {
+    const { teamId, league } = req.query;
+    const params = [];
+    let filter = 'WHERE p.is_active = TRUE';
+    if (teamId) {
+      params.push(teamId);
+      filter += ` AND p.team_id = $${params.length}`;
+    }
+    if (league) {
+      params.push(league);
+      filter += ` AND t.league = $${params.length}`;
+    }
+    const result = await pool.query(
+      `SELECT p.id, p.name, p.position, p.shirt_number, p.star_rating, p.goals_season, p.is_striker,
+              t.name AS team_name, t.short_name AS team_short, t.logo_url, t.league
+       FROM players p JOIN teams t ON p.team_id = t.id
+       ${filter}
+       ORDER BY t.league, t.name, p.shirt_number`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/team-form/:teamId', async (req, res) => {
   try {
     const res2 = await pool.query(

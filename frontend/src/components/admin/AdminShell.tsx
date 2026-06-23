@@ -15,6 +15,7 @@ import UsersSection from './sections/UsersSection';
 import PaymentsSection from './sections/PaymentsSection';
 import BookingSection from './sections/BookingSection';
 import ContentSection from './sections/ContentSection';
+import WinnersSection from './sections/WinnersSection';
 import SecuritySection from './sections/SecuritySection';
 import SettingsSection from './sections/SettingsSection';
 
@@ -30,6 +31,7 @@ export type AdminSection =
   | 'payments'
   | 'booking'
   | 'content'
+  | 'winners'
   | 'security'
   | 'settings';
 
@@ -43,6 +45,7 @@ const NAV: { id: AdminSection; label: string; icon: string; roles?: string[] }[]
   { id: 'payments', label: 'Payments', icon: '💳' },
   { id: 'booking', label: 'Booking Codes', icon: '🎫' },
   { id: 'content', label: 'Content', icon: '📢' },
+  { id: 'winners', label: 'Recent Winners', icon: '🏅' },
   { id: 'security', label: 'Security', icon: '🔒', roles: ['admin', 'super_admin'] },
   { id: 'settings', label: 'Settings', icon: '⚙️', roles: ['admin', 'super_admin'] },
 ];
@@ -153,6 +156,7 @@ export default function AdminShell() {
           {section === 'payments' && <PaymentsSection />}
           {section === 'booking' && <BookingSection />}
           {section === 'content' && <ContentSection />}
+          {section === 'winners' && <WinnersSection />}
           {section === 'security' && <SecuritySection userRole={user.role} />}
           {section === 'settings' && <SettingsSection />}
         </main>

@@ -7,6 +7,8 @@ import BetSlip from '@/components/BetSlip';
 import StadiumHero from '@/components/virtual-league/StadiumHero';
 import LeagueSelectorTabs, { LeagueTab } from '@/components/virtual-league/LeagueSelectorTabs';
 import LiveMatchCenterSection from '@/components/virtual-league/LiveMatchCenterSection';
+import LiveEventTicker from '@/components/virtual-league/LiveEventTicker';
+import LoadBookingWidget from '@/components/virtual-league/LoadBookingWidget';
 import PremiumLeagueTable, { LeagueEntry } from '@/components/virtual-league/PremiumLeagueTable';
 import PromotionalCards from '@/components/virtual-league/PromotionalCards';
 import RecentWinners from '@/components/virtual-league/RecentWinners';
@@ -41,6 +43,10 @@ export default function HomePage() {
     <MatchesDataProvider leagueFilter={activeLeague}>
       <div className="min-h-screen bg-[#0A0F14]">
         <StadiumHero />
+        <LiveEventTicker />
+        <div className="max-w-7xl mx-auto px-3 sm:px-4">
+          <LoadBookingWidget compact />
+        </div>
         <LiveMatchCenterSection />
 
         <div className="max-w-7xl mx-auto px-3 sm:px-4 py-6 sm:py-8 space-y-6">

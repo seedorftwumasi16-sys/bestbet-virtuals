@@ -151,7 +151,13 @@ export async function runLiveSimulation(matchId, manualData = null) {
   let phase = 'walkout';
   let walkoutTicks = 0;
   let halftimePause = false;
-  const liveStats = { cornersHome: 0, cornersAway: 0, yellowHome: 0, yellowAway: 0, redHome: 0, redAway: 0, foulsHome: 0, foulsAway: 0 };
+  const liveStats = {
+    cornersHome: 0, cornersAway: 0, yellowHome: 0, yellowAway: 0,
+    redHome: 0, redAway: 0, foulsHome: 0, foulsAway: 0,
+    shotsHome: 0, shotsAway: 0, shotsOnTargetHome: 0, shotsOnTargetAway: 0,
+    xgHome: 0, xgAway: 0,
+  };
+  let attackDirection = 'home';
 
   const tick = async () => {
     try {
@@ -184,6 +190,17 @@ export async function runLiveSimulation(matchId, manualData = null) {
       currentMinute += 1;
       if (currentMinute > 90) currentMinute = 90;
 
+      if (Math.random() < 0.35) {
+        const shooter = Math.random() < possessionHome / 100 ? 'home' : 'away';
+        attackDirection = shooter;
+        liveStats[shooter === 'home' ? 'shotsHome' : 'shotsAway']++;
+        const onTarget = Math.random() < 0.42;
+        if (onTarget) {
+          liveStats[shooter === 'home' ? 'shotsOnTargetHome' : 'shotsOnTargetAway']++;
+          liveStats[shooter === 'home' ? 'xgHome' : 'xgAway'] += Math.round((0.05 + Math.random() * 0.18) * 100) / 100;
+        }
+      }
+
       const minuteEvents = events.filter((e) => e.minute === currentMinute);
       const commentaryLines = [];
 
@@ -201,24 +218,37 @@ export async function runLiveSimulation(matchId, manualData = null) {
         if (e.type === 'goal') {
           if (e.team === 'home') liveHomeScore++;
           else liveAwayScore++;
+          attackDirection = e.team;
+          liveStats[e.team === 'home' ? 'shotsHome' : 'shotsAway']++;
+          liveStats[e.team === 'home' ? 'shotsOnTargetHome' : 'shotsOnTargetAway']++;
+          liveStats[e.team === 'home' ? 'xgHome' : 'xgAway'] += 0.35;
           if (e.playerId) await incrementPlayerGoals(e.playerId);
-          if (io) io.emit('match:goal', { matchId, team: e.team, minute: currentMinute });
+          if (io) io.emit('match:goal', { matchId, team: e.team, minute: currentMinute, player: e.player });
+          if (io) io.emit('match:ticker', { matchId, type: 'goal', minute: currentMinute, player: e.player, team: e.team });
         }
         if (e.type === 'corner') {
           if (e.team === 'home') liveStats.cornersHome++;
           else liveStats.cornersAway++;
+          attackDirection = e.team;
+          if (io) io.emit('match:ticker', { matchId, type: 'corner', minute: currentMinute, team: e.team });
         }
         if (e.type === 'yellow_card') {
           if (e.team === 'home') liveStats.yellowHome++;
           else liveStats.yellowAway++;
+          if (io) io.emit('match:ticker', { matchId, type: 'yellow_card', minute: currentMinute, team: e.team });
         }
         if (e.type === 'red_card') {
           if (e.team === 'home') liveStats.redHome++;
           else liveStats.redAway++;
+          if (io) io.emit('match:ticker', { matchId, type: 'red_card', minute: currentMinute, team: e.team });
         }
         if (e.type === 'foul') {
           if (e.team === 'home') liveStats.foulsHome++;
           else liveStats.foulsAway++;
+          if (io) io.emit('match:ticker', { matchId, type: 'foul', minute: currentMinute, team: e.team });
+        }
+        if (e.type === 'substitution') {
+          if (io) io.emit('match:ticker', { matchId, type: 'substitution', minute: currentMinute, team: e.team });
         }
 
         if (['goal', 'yellow_card', 'red_card', 'corner', 'foul', 'injury', 'substitution'].includes(e.type)) {
@@ -236,12 +266,17 @@ export async function runLiveSimulation(matchId, manualData = null) {
       await pool.query(
         `UPDATE matches SET home_score = $2, away_score = $3, possession_home = $4, possession_away = $5,
          corners_home = $6, corners_away = $7, yellow_cards_home = $8, yellow_cards_away = $9,
-         red_cards_home = $10, red_cards_away = $11, fouls_home = $12, fouls_away = $13, updated_at = NOW()
+         red_cards_home = $10, red_cards_away = $11, fouls_home = $12, fouls_away = $13,
+         shots_home = $14, shots_away = $15, shots_on_target_home = $16, shots_on_target_away = $17,
+         xg_home = $18, xg_away = $19, live_minute = $20, updated_at = NOW()
          WHERE id = $1`,
         [
           matchId, liveHomeScore, liveAwayScore, possessionHome, 100 - possessionHome,
           liveStats.cornersHome, liveStats.cornersAway, liveStats.yellowHome, liveStats.yellowAway,
           liveStats.redHome, liveStats.redAway, liveStats.foulsHome, liveStats.foulsAway,
+          liveStats.shotsHome, liveStats.shotsAway, liveStats.shotsOnTargetHome, liveStats.shotsOnTargetAway,
+          Math.round(liveStats.xgHome * 100) / 100, Math.round(liveStats.xgAway * 100) / 100,
+          currentMinute,
         ]
       );
 
@@ -254,6 +289,9 @@ export async function runLiveSimulation(matchId, manualData = null) {
           awayScore: liveAwayScore,
           events: minuteEvents,
           commentary: commentaryLines.join(' | '),
+          attackDirection,
+          possessionHome,
+          possessionAway: 100 - possessionHome,
           stats: liveStats,
         });
       }
@@ -261,7 +299,7 @@ export async function runLiveSimulation(matchId, manualData = null) {
       if (currentMinute >= 90 && !halftimePause) {
         clearInterval(liveSimulationTimers[matchId]);
         delete liveSimulationTimers[matchId];
-        await finalizeMatch(matchId, match, homeScore, awayScore, events, possessionHome);
+        await finalizeMatch(matchId, match, liveHomeScore, liveAwayScore, events, possessionHome, liveStats);
       }
     } catch (err) {
       console.error(`Simulation tick error (${matchId}):`, err.message);
@@ -277,7 +315,7 @@ export async function runLiveSimulation(matchId, manualData = null) {
   tick();
 }
 
-async function finalizeMatch(matchId, match, homeScore, awayScore, events, possessionHome = 50) {
+async function finalizeMatch(matchId, match, homeScore, awayScore, events, possessionHome = 50, liveStats = null) {
   let htHome = 0;
   let htAway = 0;
   let firstGoalTeamId = null;
@@ -299,8 +337,12 @@ async function finalizeMatch(matchId, match, homeScore, awayScore, events, posse
     }
   }
 
-  const shotsHome = randomInt(5, 18);
-  const shotsAway = randomInt(3, 15);
+  const shotsHome = liveStats?.shotsHome ?? randomInt(5, 18);
+  const shotsAway = liveStats?.shotsAway ?? randomInt(3, 15);
+  const sotHome = liveStats?.shotsOnTargetHome ?? randomInt(2, 8);
+  const sotAway = liveStats?.shotsOnTargetAway ?? randomInt(1, 6);
+  const xgHome = liveStats ? Math.round(liveStats.xgHome * 100) / 100 : Math.round((homeScore + randomInt(0, 3)) * 0.35 * 100) / 100;
+  const xgAway = liveStats ? Math.round(liveStats.xgAway * 100) / 100 : Math.round((awayScore + randomInt(0, 3)) * 0.35 * 100) / 100;
   const cornersHome = events.filter((e) => e.type === 'corner' && e.team === 'home').length;
   const cornersAway = events.filter((e) => e.type === 'corner' && e.team === 'away').length;
   const yellowHome = events.filter((e) => e.type === 'yellow_card' && e.team === 'home').length;
@@ -317,17 +359,20 @@ async function finalizeMatch(matchId, match, homeScore, awayScore, events, posse
       half_time_home = $4, half_time_away = $5,
       possession_home = $6, possession_away = $7,
       shots_home = $8, shots_away = $9,
-      corners_home = $10, corners_away = $11,
-      yellow_cards_home = $12, yellow_cards_away = $13,
-      red_cards_home = $14, red_cards_away = $15,
-      fouls_home = $16, fouls_away = $17,
-      first_goal_team_id = $18, last_goal_team_id = $19,
-      first_goal_scorer = $20, updated_at = NOW()
+      shots_on_target_home = $10, shots_on_target_away = $11,
+      xg_home = $12, xg_away = $13,
+      corners_home = $14, corners_away = $15,
+      yellow_cards_home = $16, yellow_cards_away = $17,
+      red_cards_home = $18, red_cards_away = $19,
+      fouls_home = $20, fouls_away = $21,
+      first_goal_team_id = $22, last_goal_team_id = $23,
+      first_goal_scorer = $24, live_minute = 90, updated_at = NOW()
      WHERE id = $1`,
     [
       matchId, homeScore, awayScore, htHome, htAway,
       possessionHome, 100 - possessionHome,
-      shotsHome, shotsAway, cornersHome, cornersAway,
+      shotsHome, shotsAway, sotHome, sotAway, xgHome, xgAway,
+      cornersHome, cornersAway,
       yellowHome, yellowAway, redHome, redAway,
       foulsHome, foulsAway, firstGoalTeamId, lastGoalTeamId, firstGoalScorer,
     ]

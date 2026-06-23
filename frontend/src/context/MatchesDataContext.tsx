@@ -21,12 +21,17 @@ export interface MatchSummary {
   away_short: string;
   home_logo?: string;
   away_logo?: string;
+  home_star_rating?: number;
+  away_star_rating?: number;
   scheduled_at: string;
   status: string;
   home_score?: number;
   away_score?: number;
+  live_minute?: number;
   odds?: Array<{ market: string; selection: string; odds: number }>;
 }
+
+export type LiveMeta = { minute: number; home_score: number; away_score: number };
 
 export interface LeagueStats {
   total_played: number;
@@ -58,6 +63,7 @@ export interface LeagueStats {
 type MatchesDataContextValue = {
   upcoming: MatchSummary[];
   live: MatchSummary[];
+  liveMeta: Record<string, LiveMeta>;
   leagueStats: LeagueStats | null;
   loading: boolean;
   error: string | null;
@@ -106,6 +112,7 @@ export function MatchesDataProvider({
 }) {
   const [upcoming, setUpcoming] = useState<MatchSummary[]>([]);
   const [live, setLive] = useState<MatchSummary[]>([]);
+  const [liveMeta, setLiveMeta] = useState<Record<string, LiveMeta>>({});
   const [leagueStats, setLeagueStats] = useState<LeagueStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -163,20 +170,37 @@ export function MatchesDataProvider({
     const socket = getSharedSocket();
     const onLive = () => scheduleRefresh();
     const onFinished = () => scheduleRefresh();
+    const onUpdate = (u: { matchId: string; minute: number; homeScore?: number; awayScore?: number }) => {
+      if (u.homeScore === undefined) return;
+      setLiveMeta((prev) => ({
+        ...prev,
+        [u.matchId]: { minute: u.minute, home_score: u.homeScore!, away_score: u.awayScore! },
+      }));
+      const patch = (list: MatchSummary[]) =>
+        list.map((m) =>
+          m.id === u.matchId
+            ? { ...m, home_score: u.homeScore, away_score: u.awayScore, live_minute: u.minute, status: 'live' as const }
+            : m
+        );
+      setUpcoming((prev) => patch(prev));
+      setLive((prev) => patch(prev));
+    };
 
     socket.on('match:live', onLive);
     socket.on('match:finished', onFinished);
+    socket.on('match:update', onUpdate);
 
     return () => {
       socket.off('match:live', onLive);
       socket.off('match:finished', onFinished);
+      socket.off('match:update', onUpdate);
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
     };
   }, [scheduleRefresh]);
 
   const value = useMemo(
-    () => ({ upcoming, live, leagueStats, loading, error, refresh }),
-    [upcoming, live, leagueStats, loading, error, refresh]
+    () => ({ upcoming, live, liveMeta, leagueStats, loading, error, refresh }),
+    [upcoming, live, liveMeta, leagueStats, loading, error, refresh]
   );
 
   return <MatchesDataContext.Provider value={value}>{children}</MatchesDataContext.Provider>;

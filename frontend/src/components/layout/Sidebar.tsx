@@ -19,6 +19,7 @@ const items = [
   { href: '/', label: 'Virtual Football', icon: IconFootball, match: '/' },
   { href: '/#upcoming', label: 'Upcoming Matches', icon: IconFootball },
   { href: '/results', label: 'Results', icon: IconChart },
+  { href: '/players', label: 'Players', icon: IconChart },
   { href: '/league', label: 'League Table', icon: IconTrophy },
   { href: '/booking', label: 'Booking Code', icon: IconCard },
   { href: '/tickets', label: 'Bet History', icon: IconChart },
