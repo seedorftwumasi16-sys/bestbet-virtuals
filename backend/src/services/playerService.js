@@ -33,8 +33,30 @@ export async function incrementPlayerGoals(playerId) {
 
 export async function getPlayersByTeam(teamId) {
   const res = await pool.query(
-    'SELECT * FROM players WHERE team_id = $1 ORDER BY position, shirt_number',
+    'SELECT * FROM players WHERE team_id = $1 AND is_active = TRUE ORDER BY position, shirt_number',
     [teamId]
   );
   return res.rows;
+}
+
+/** Ensure team has a full European squad; auto-generate if empty */
+export async function ensureTeamSquad(teamId) {
+  const countRes = await pool.query(
+    'SELECT COUNT(*)::int AS c FROM players WHERE team_id = $1 AND is_active = TRUE',
+    [teamId]
+  );
+  if (countRes.rows[0].c > 0) {
+    return getPlayersByTeam(teamId);
+  }
+
+  const teamRes = await pool.query(
+    'SELECT id, short_name, star_rating FROM teams WHERE id = $1',
+    [teamId]
+  );
+  const team = teamRes.rows[0];
+  if (!team) return [];
+
+  console.log(`[players] Auto-generating squad for team ${teamId} (${team.short_name})`);
+  await seedPlayersForTeam(teamId, team.short_name, team.star_rating || 3);
+  return getPlayersByTeam(teamId);
 }

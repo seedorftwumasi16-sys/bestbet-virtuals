@@ -7,6 +7,7 @@ import { auditLog } from '../services/auditService.js';
 import { updateSetting, getAllSettings } from '../services/settingsService.js';
 import { generateMatchOdds } from '../services/oddsService.js';
 import { createScheduledMatch } from '../services/matchEngine.js';
+import { ensureTeamSquad } from '../services/playerService.js';
 import { voidBet } from '../services/bettingService.js';
 import { createNotification } from '../services/notificationService.js';
 import { requireSuperAdmin, requireAdminRole } from '../middleware/roles.js';
@@ -22,6 +23,7 @@ import {
   updateLiveMatchFields,
   addGoalEvent,
   deleteGoalEvent,
+  updateGoalEvent,
   startMatchPlayback,
   endMatchNow,
   getMatchHistory,
@@ -325,6 +327,16 @@ router.delete('/matches/:id/goals/:eventId', async (req, res) => {
   }
 });
 
+router.put('/matches/:id/goals/:eventId', async (req, res) => {
+  try {
+    const data = await updateGoalEvent(req.params.id, req.params.eventId, req.body);
+    await auditLog(req.user.id, 'goal_updated', 'match', req.params.id, req.body, req.ip);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 router.post('/matches/:id/start', async (req, res) => {
   try {
     const data = await startMatchPlayback(req.params.id);
@@ -399,17 +411,24 @@ router.put('/matches/:id/status', async (req, res) => {
 
 // ─── All players (goal scorers) ──────────────────────────────────
 router.get('/players', async (req, res) => {
-  const { teamId } = req.query;
-  let query = `SELECT p.*, t.name AS team_name, t.short_name AS team_short
-               FROM players p JOIN teams t ON p.team_id = t.id WHERE p.is_active = TRUE`;
-  const params = [];
-  if (teamId) {
-    params.push(teamId);
-    query += ` AND p.team_id = $${params.length}`;
+  try {
+    const { teamId } = req.query;
+    if (teamId) {
+      const players = await ensureTeamSquad(teamId);
+      console.log(`[admin] GET /players teamId=${teamId} count=${players.length}`);
+      return res.json(players);
+    }
+    const result = await pool.query(
+      `SELECT p.*, t.name AS team_name, t.short_name AS team_short
+       FROM players p JOIN teams t ON p.team_id = t.id WHERE p.is_active = TRUE
+       ORDER BY t.name, p.position, p.shirt_number`
+    );
+    console.log(`[admin] GET /players all count=${result.rows.length}`);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('[admin] GET /players error:', err.message);
+    res.status(500).json({ error: err.message });
   }
-  query += ' ORDER BY t.name, p.position, p.shirt_number';
-  const result = await pool.query(query, params);
-  res.json(result.rows);
 });
 
 // ─── Team extended ───────────────────────────────────────────────

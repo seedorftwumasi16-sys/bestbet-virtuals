@@ -8,7 +8,7 @@ import {
   clearLiveOverride,
   getSchedulerIo,
 } from './schedulerService.js';
-import { incrementPlayerGoals } from './playerService.js';
+import { incrementPlayerGoals, ensureTeamSquad } from './playerService.js';
 import { COMMENTARY, pick } from './simulationService.js';
 
 export function buildPresetGoalEvents(goals = []) {
@@ -82,12 +82,29 @@ async function recalcScoresFromGoals(matchId) {
 
 export async function getLiveMatchAdminState(matchId) {
   const details = await getMatchWithDetails(matchId);
+  const match = details.match;
   const goals = details.events.filter((e) => e.event_type === 'goal');
-  let presetEvents = details.match?.preset_events;
+  let presetEvents = match?.preset_events;
   if (typeof presetEvents === 'string') {
     try { presetEvents = JSON.parse(presetEvents); } catch { presetEvents = []; }
   }
-  return { ...details, goals, presetEvents: presetEvents || [] };
+
+  let homePlayers = [];
+  let awayPlayers = [];
+  if (match?.home_team_id) {
+    homePlayers = await ensureTeamSquad(match.home_team_id);
+  }
+  if (match?.away_team_id) {
+    awayPlayers = await ensureTeamSquad(match.away_team_id);
+  }
+
+  return {
+    ...details,
+    goals,
+    presetEvents: presetEvents || [],
+    homePlayers,
+    awayPlayers,
+  };
 }
 
 export async function updateLiveMatchFields(matchId, fields) {
@@ -215,6 +232,40 @@ export async function deleteGoalEvent(matchId, eventId) {
 
   setLiveOverride(matchId, { homeScore: home, awayScore: away });
   emit(matchId, 'match:update', { homeScore: home, awayScore: away, commentary: 'Goal removed by admin.' });
+
+  return getLiveMatchAdminState(matchId);
+}
+
+export async function updateGoalEvent(matchId, eventId, { team, minute, player, playerId }) {
+  const match = await loadMatchRow(matchId);
+  if (!match) throw new Error('Match not found');
+
+  const ev = await pool.query(
+    'SELECT * FROM match_events WHERE id = $1 AND match_id = $2 AND event_type = $3',
+    [eventId, matchId, 'goal']
+  );
+  if (!ev.rows[0]) throw new Error('Goal not found');
+
+  const side = team === 'away' ? 'away' : 'home';
+  const teamId = side === 'home' ? match.home_team_id : match.away_team_id;
+  const min = Math.min(90, Math.max(1, parseInt(minute, 10) || 1));
+  const playerName = player || ev.rows[0].player_name || 'Unknown';
+  const desc = `⚽ GOAL! ${playerName} scores! ${pick(COMMENTARY.goal)}`;
+
+  await pool.query(
+    `UPDATE match_events SET team_id = $2, minute = $3, player_name = $4, description = $5
+     WHERE id = $1`,
+    [eventId, teamId, min, playerName, desc]
+  );
+
+  const { home, away } = await recalcScoresFromGoals(matchId);
+  await pool.query(
+    'UPDATE matches SET home_score = $2, away_score = $3, live_minute = GREATEST(live_minute, $4), updated_at = NOW() WHERE id = $1',
+    [matchId, home, away, min]
+  );
+
+  setLiveOverride(matchId, { homeScore: home, awayScore: away, minute: min });
+  emit(matchId, 'match:update', { homeScore: home, awayScore: away, minute: min, commentary: desc });
 
   return getLiveMatchAdminState(matchId);
 }

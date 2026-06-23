@@ -9,7 +9,7 @@ export const EUROPEAN_LEAGUES = [
 ];
 
 export const EXPECTED_TEAM_COUNT = 30;
-export const MIN_SQUAD_SIZE = 18;
+export const MIN_SQUAD_SIZE = 25;
 
 /** Map overall strength (70–93) to 1–5 star display */
 export function strengthToStars(strength) {

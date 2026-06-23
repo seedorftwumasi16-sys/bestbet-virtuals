@@ -65,13 +65,19 @@ export default function MatchesSection() {
   }, [filter]);
 
   useEffect(() => {
-    if (form.homeTeamId) api<Player[]>(`/admin/players?teamId=${form.homeTeamId}`).then(setHomePlayers).catch(() => setHomePlayers([]));
-    else setHomePlayers([]);
+    if (form.homeTeamId) {
+      api<Player[]>(`/admin/players?teamId=${form.homeTeamId}`)
+        .then((rows) => { console.log('[Matches] home players:', rows.length); setHomePlayers(rows); })
+        .catch((err) => { console.error('[Matches] home players failed:', err); setHomePlayers([]); });
+    } else setHomePlayers([]);
   }, [form.homeTeamId]);
 
   useEffect(() => {
-    if (form.awayTeamId) api<Player[]>(`/admin/players?teamId=${form.awayTeamId}`).then(setAwayPlayers).catch(() => setAwayPlayers([]));
-    else setAwayPlayers([]);
+    if (form.awayTeamId) {
+      api<Player[]>(`/admin/players?teamId=${form.awayTeamId}`)
+        .then((rows) => { console.log('[Matches] away players:', rows.length); setAwayPlayers(rows); })
+        .catch((err) => { console.error('[Matches] away players failed:', err); setAwayPlayers([]); });
+    } else setAwayPlayers([]);
   }, [form.awayTeamId]);
 
   const addPresetGoal = () => {
@@ -182,10 +188,16 @@ export default function MatchesSection() {
                   }}
                   className="input-field"
                 >
-                  <option value="">Select…</option>
-                  {(newGoal.team === 'home' ? homePlayers : awayPlayers).map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
+                  {(newGoal.team === 'home' ? homePlayers : awayPlayers).length === 0 ? (
+                    <option value="">No players found for this team</option>
+                  ) : (
+                    <>
+                      <option value="">Select…</option>
+                      {(newGoal.team === 'home' ? homePlayers : awayPlayers).map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </>
+                  )}
                 </select>
               </Field>
               <div className="flex items-end sm:col-span-2">
