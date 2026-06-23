@@ -10,7 +10,7 @@ import { BetRecord } from '@/lib/bets';
 export default function BookingPage() {
   const [code, setCode] = useState('');
   const [bet, setBet] = useState<BetRecord | null>(null);
-  const [slip, setSlip] = useState<{ code: string; stake: number; selections: Array<Record<string, unknown>> } | null>(null);
+  const [slip, setSlip] = useState<{ code: string; stake: number; selections: Array<{ matchId?: string; market: string; selection: string; odds: number; homeTeam?: string; awayTeam?: string; home_team?: string; away_team?: string }> } | null>(null);
   const [error, setError] = useState('');
   const { loadFromBooking, setStake } = useBetSlip();
   const router = useRouter();
@@ -24,7 +24,7 @@ export default function BookingPage() {
         `/bets/booking/${code}`
       );
       if (data.type === 'slip') {
-        setSlip({ code: data.code || code, stake: data.stake || 10, selections: data.selections as Array<Record<string, unknown>> });
+        setSlip({ code: data.code || code, stake: data.stake || 10, selections: data.selections || [] });
       } else if (data.bet) {
         setBet({ ...data.bet, selections: data.selections || data.bet.selections });
       }
@@ -74,9 +74,9 @@ export default function BookingPage() {
             <p className="font-mono text-accent-400 font-black text-xl">{slip.code}</p>
             {slip.selections.map((s, i) => (
               <div key={i} className="bg-dark-700 rounded-lg p-3 text-sm">
-                <p className="font-medium">{String(s.homeTeam || s.home_team)} vs {String(s.awayTeam || s.away_team)}</p>
+                <p className="font-medium">{s.homeTeam || s.home_team} vs {s.awayTeam || s.away_team}</p>
                 <p className="text-gray-400 text-xs">
-                  {MARKET_LABELS[String(s.market)]} · {SELECTION_LABELS[String(s.selection)] || String(s.selection)} @ {formatOdds(Number(s.odds))}
+                  {MARKET_LABELS[s.market]} · {SELECTION_LABELS[s.selection] || s.selection} @ {formatOdds(s.odds)}
                 </p>
               </div>
             ))}
