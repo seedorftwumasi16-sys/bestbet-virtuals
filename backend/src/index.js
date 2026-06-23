@@ -73,6 +73,7 @@ app.get('/api/health', async (req, res) => {
     res.json({
       status: 'ok',
       service: 'SkyBet API',
+      build: 'skybet-european-v3',
       brand: 'SkyBet',
       tagline: 'Bet Smart, Win More',
       env: process.env.NODE_ENV || 'development',

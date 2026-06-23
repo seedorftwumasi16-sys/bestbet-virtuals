@@ -29,17 +29,26 @@ export async function runProductionSeed() {
 
   const demoExists = await pool.query('SELECT id FROM users WHERE email = $1', ['demo@skybet.com']);
   if (!demoExists.rows.length) {
-    await pool.query(
-      `INSERT INTO users (email, phone, password_hash, first_name, last_name, balance)
-       VALUES ($1, $2, $3, 'Demo', 'User', 1000)`,
-      ['demo@skybet.com', '0244123456', demoHash]
-    );
-    console.log('✅ Demo user created: demo@skybet.com');
+    try {
+      await pool.query(
+        `INSERT INTO users (email, phone, password_hash, first_name, last_name, balance)
+         VALUES ($1, $2, $3, 'Demo', 'User', 1000)`,
+        ['demo@skybet.com', '0244123456', demoHash]
+      );
+      console.log('✅ Demo user created: demo@skybet.com');
+    } catch (err) {
+      if (err.code === '23505') {
+        console.log('⚠️ Demo user skipped (phone or email already exists)');
+      } else {
+        throw err;
+      }
+    }
   }
 
   const teamCount = await pool.query('SELECT COUNT(*) as c FROM teams');
-  if (parseInt(teamCount.rows[0].c, 10) < 40) {
-    await seedEuropeanFootball(pool, { reset: false });
+  const count = parseInt(teamCount.rows[0].c, 10);
+  if (count < 40) {
+    await seedEuropeanFootball(pool, { reset: count > 0 && count < 40 });
   }
 
   const settings = [
@@ -63,7 +72,7 @@ export async function runProductionSeed() {
   for (const s of settings) {
     await pool.query(
       `INSERT INTO system_settings (key, value) VALUES ($1, $2)
-       ON CONFLICT (key) DO NOTHING`,
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
       [s.key, s.value]
     );
   }

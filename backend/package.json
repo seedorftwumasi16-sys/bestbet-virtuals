@@ -9,6 +9,7 @@
     "seed": "node src/db/seed.js",
     "test:admin": "node scripts/test-admin-auth.js",
     "test:admin:full": "node scripts/test-admin-full.js",
+    "test:production": "node scripts/test-production.js",
     "build": "echo 'No build step required'"
   },
   "dependencies": {
