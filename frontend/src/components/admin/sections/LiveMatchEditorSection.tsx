@@ -115,7 +115,21 @@ export default function LiveMatchEditorSection() {
     setError(null);
     try {
       console.log('[LiveEditor] loading match state:', id);
-      const data = await api<LiveState>(`/admin/matches/${id}/live`);
+      let data: LiveState;
+      try {
+        data = await api<LiveState>(`/admin/matches/${id}/live`);
+      } catch (liveErr) {
+        console.warn('[LiveEditor] /live endpoint failed, using fallback:', liveErr);
+        const allMatches = await api<MatchRow[]>('/admin/matches');
+        const match = allMatches.find((x) => x.id === id);
+        if (!match?.home_team_id) throw liveErr;
+        const [homePlayers, awayPlayers] = await Promise.all([
+          api<Player[]>(`/admin/teams/${match.home_team_id}/players`),
+          api<Player[]>(`/admin/teams/${match.away_team_id}/players`),
+        ]);
+        data = { match, goals: [], events: [], homePlayers, awayPlayers };
+      }
+
       console.log('[LiveEditor] match loaded:', {
         home: data.match?.home_team_name,
         away: data.match?.away_team_name,
@@ -123,8 +137,19 @@ export default function LiveMatchEditorSection() {
         awayPlayers: data.awayPlayers?.length ?? 0,
         goals: data.goals?.length ?? 0,
       });
-      setState(data);
+
       const match = data.match;
+      if ((!data.homePlayers?.length || !data.awayPlayers?.length) && match?.home_team_id) {
+        console.log('[LiveEditor] fetching players via /admin/teams/:id/players fallback');
+        const [hp, ap] = await Promise.all([
+          data.homePlayers?.length ? Promise.resolve(data.homePlayers) : api<Player[]>(`/admin/teams/${match.home_team_id}/players`),
+          data.awayPlayers?.length ? Promise.resolve(data.awayPlayers) : api<Player[]>(`/admin/teams/${match.away_team_id}/players`),
+        ]);
+        data = { ...data, homePlayers: hp, awayPlayers: ap };
+        console.log('[LiveEditor] fallback players:', hp.length, ap.length);
+      }
+
+      setState(data);
       setScores({ home: match.home_score ?? 0, away: match.away_score ?? 0, minute: match.live_minute ?? 0 });
       setCommentary(match.admin_commentary || '');
       setMatchStatus(match.status || 'scheduled');

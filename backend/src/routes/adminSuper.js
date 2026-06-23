@@ -458,11 +458,14 @@ router.put('/teams/:id/details', async (req, res) => {
 });
 
 router.get('/teams/:id/players', async (req, res) => {
-  const result = await pool.query(
-    'SELECT * FROM players WHERE team_id = $1 ORDER BY position, shirt_number',
-    [req.params.id]
-  );
-  res.json(result.rows);
+  try {
+    const players = await ensureTeamSquad(req.params.id);
+    console.log(`[admin] GET /teams/${req.params.id}/players count=${players.length}`);
+    res.json(players);
+  } catch (err) {
+    console.error('[admin] GET team players error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.post('/teams/:id/players', async (req, res) => {

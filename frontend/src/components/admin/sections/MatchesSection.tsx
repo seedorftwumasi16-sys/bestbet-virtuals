@@ -66,7 +66,7 @@ export default function MatchesSection() {
 
   useEffect(() => {
     if (form.homeTeamId) {
-      api<Player[]>(`/admin/players?teamId=${form.homeTeamId}`)
+      api<Player[]>(`/admin/teams/${form.homeTeamId}/players`)
         .then((rows) => { console.log('[Matches] home players:', rows.length); setHomePlayers(rows); })
         .catch((err) => { console.error('[Matches] home players failed:', err); setHomePlayers([]); });
     } else setHomePlayers([]);
@@ -74,7 +74,7 @@ export default function MatchesSection() {
 
   useEffect(() => {
     if (form.awayTeamId) {
-      api<Player[]>(`/admin/players?teamId=${form.awayTeamId}`)
+      api<Player[]>(`/admin/teams/${form.awayTeamId}/players`)
         .then((rows) => { console.log('[Matches] away players:', rows.length); setAwayPlayers(rows); })
         .catch((err) => { console.error('[Matches] away players failed:', err); setAwayPlayers([]); });
     } else setAwayPlayers([]);
