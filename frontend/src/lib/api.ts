@@ -2,15 +2,13 @@ const configuredApiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4
 const isDev = process.env.NODE_ENV === 'development';
 
 /**
- * In Next.js dev, always use same-origin `/api` (rewrites proxy to backend).
- * Avoids CORS / wrong-host issues when opening via 127.0.0.1 or LAN IP.
+ * In Next.js dev, use same-origin `/api` (rewrites proxy to backend).
+ * In production, call the configured API URL directly (Railway CORS allows Vercel).
  */
 export function getApiBaseUrl(): string {
   if (typeof window === 'undefined') return configuredApiUrl;
   const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1') return '';
-  // Same-origin /api proxy on Vercel avoids CORS and wrong API host issues
-  if (host.endsWith('.vercel.app')) return '';
+  if (isDev && (host === 'localhost' || host === '127.0.0.1')) return '';
   return configuredApiUrl;
 }
 
