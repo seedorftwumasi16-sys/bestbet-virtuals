@@ -123,6 +123,8 @@ export async function processScheduledMatches() {
       if (liveSimulationTimers[row.id]) continue;
       await runLiveSimulation(row.id);
     }
+  } catch (err) {
+    console.error('Scheduler error:', err.message);
   } finally {
     processingScheduled = false;
   }
@@ -168,6 +170,7 @@ export async function runLiveSimulation(matchId, manualData = null) {
   let liveStats = { cornersHome: 0, cornersAway: 0, yellowHome: 0, yellowAway: 0, redHome: 0, redAway: 0, foulsHome: 0, foulsAway: 0 };
 
   const tick = async () => {
+    try {
     if (phase === 'walkout') {
       phase = 'kickoff';
       if (io) io.emit('match:update', { matchId, phase: 'kickoff', commentary: 'Teams walk out onto the pitch...' });
@@ -242,6 +245,13 @@ export async function runLiveSimulation(matchId, manualData = null) {
       clearInterval(liveSimulationTimers[matchId]);
       delete liveSimulationTimers[matchId];
       await finalizeMatch(matchId, match, homeScore, awayScore, events);
+    }
+    } catch (err) {
+      console.error(`Simulation tick error (${matchId}):`, err.message);
+      if (err.code === '53100') {
+        clearInterval(liveSimulationTimers[matchId]);
+        delete liveSimulationTimers[matchId];
+      }
     }
   };
 

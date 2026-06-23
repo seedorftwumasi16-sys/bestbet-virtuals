@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { api, getSocketUrl } from '@/lib/api';
-import { io, Socket } from 'socket.io-client';
+import { api } from '@/lib/api';
+import { getSharedSocket } from '@/lib/socket';
 import TeamLogo from '@/components/ui/TeamLogo';
 
 interface MatchEvent {
@@ -51,7 +51,7 @@ export default function MatchCenter({ matchId }: { matchId: string }) {
 
   useEffect(() => {
     loadMatch();
-    const socket: Socket = io(getSocketUrl());
+    const socket = getSharedSocket();
 
     socket.on('match:update', (update: {
       matchId: string; minute: number; phase?: string;
@@ -84,7 +84,11 @@ export default function MatchCenter({ matchId }: { matchId: string }) {
       if (id === matchId) loadMatch();
     });
 
-    return () => { socket.disconnect(); };
+    return () => {
+      socket.off('match:update');
+      socket.off('match:goal');
+      socket.off('match:finished');
+    };
   }, [matchId]);
 
   const loadMatch = async () => {
@@ -143,29 +147,20 @@ export default function MatchCenter({ matchId }: { matchId: string }) {
             align="left"
           />
           <div className="text-center relative min-w-[120px]">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={`${m.home_score}-${m.away_score}`}
-                initial={{ scale: 1.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className={`text-5xl sm:text-7xl lg:text-8xl font-black tabular-nums tracking-wider ${
-                  goalFlash ? 'text-accent-500' : 'text-white'
-                }`}
-                style={{ textShadow: goalFlash ? '0 0 30px rgba(255,215,0,0.5)' : '0 0 20px rgba(0,230,118,0.2)' }}
-              >
-                {m.home_score}
-                <span className="text-gray-600 mx-2">:</span>
-                {m.away_score}
-              </motion.div>
-            </AnimatePresence>
+            <p
+              className={`text-5xl sm:text-7xl lg:text-8xl font-black tabular-nums tracking-wider transition-colors duration-300 ${
+                goalFlash ? 'text-accent-500' : 'text-white'
+              }`}
+              style={{ textShadow: goalFlash ? '0 0 30px rgba(255,215,0,0.5)' : '0 0 20px rgba(0,230,118,0.2)' }}
+            >
+              {m.home_score}
+              <span className="text-gray-600 mx-2">:</span>
+              {m.away_score}
+            </p>
             {goalFlash && (
-              <motion.p
-                initial={{ scale: 0, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="text-accent-500 font-black text-sm mt-1 tracking-widest"
-              >
+              <p className="text-accent-500 font-black text-sm mt-1 tracking-widest animate-pulse">
                 GOAL!
-              </motion.p>
+              </p>
             )}
           </div>
           <TeamBlock
@@ -308,14 +303,12 @@ function StatBar({ label, home, away, suffix = '' }: { label: string; home: numb
         <span className="text-blue-400 font-bold">{away}{suffix}</span>
       </div>
       <div className="flex h-2 rounded-full overflow-hidden bg-dark-700 gap-0.5">
-        <motion.div
-          className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-l-full"
-          animate={{ width: `${(home / total) * 100}%` }}
-          transition={{ duration: 0.6 }}
+        <div
+          className="bg-gradient-to-r from-primary-600 to-primary-500 rounded-l-full transition-[width] duration-500 ease-out"
           style={{ width: `${(home / total) * 100}%` }}
         />
-        <motion.div
-          className="bg-gradient-to-r from-blue-600 to-blue-400 rounded-r-full"
+        <div
+          className="bg-gradient-to-r from-blue-600 to-blue-400 rounded-r-full transition-[width] duration-500 ease-out"
           style={{ width: `${(away / total) * 100}%` }}
         />
       </div>

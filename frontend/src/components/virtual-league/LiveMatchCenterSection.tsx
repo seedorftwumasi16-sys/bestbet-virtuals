@@ -1,57 +1,31 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
-import { motion } from 'framer-motion';
-import { api, getSocketUrl } from '@/lib/api';
 import MatchCenter from '@/components/virtual-league/MatchCenter';
 import { IconLive } from '@/components/icons/FootballIcons';
+import { useMatchesData } from '@/context/MatchesDataContext';
 
 export default function LiveMatchCenterSection() {
+  const { live, upcoming, loading } = useMatchesData();
   const [matchId, setMatchId] = useState<string | null>(null);
   const [isLive, setIsLive] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  const pickMatch = async () => {
-    try {
-      const live = await api<Array<{ id: string }>>('/matches/live');
-      if (live.length > 0) {
-        setMatchId(live[0].id);
-        setIsLive(true);
-        return;
-      }
-      const upcoming = await api<Array<{ id: string }>>('/matches/upcoming');
-      if (upcoming.length > 0) {
-        setMatchId(upcoming[0].id);
-        setIsLive(false);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    pickMatch();
-    const socket: Socket = io(getSocketUrl());
-
-    socket.on('match:live', ({ matchId: id }: { matchId: string }) => {
-      setMatchId(id);
+    if (live.length > 0) {
+      setMatchId((prev) => (live.some((m) => m.id === prev) ? prev : live[0].id));
       setIsLive(true);
-    });
-
-    socket.on('match:finished', () => {
+      return;
+    }
+    if (upcoming.length > 0) {
+      setMatchId((prev) => (upcoming.some((m) => m.id === prev) ? prev : upcoming[0].id));
       setIsLive(false);
-      pickMatch();
-    });
+      return;
+    }
+    setMatchId(null);
+    setIsLive(false);
+  }, [live, upcoming]);
 
-    return () => {
-      socket.disconnect();
-    };
-  }, []);
-
-  if (loading) {
+  if (loading && !matchId) {
     return (
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4">
         <div className="glass-panel h-64 flex items-center justify-center">
@@ -65,11 +39,7 @@ export default function LiveMatchCenterSection() {
 
   return (
     <section className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
+      <div>
         <div className="flex items-center gap-3 mb-4">
           <div className="flex items-center gap-2">
             {isLive && <IconLive size={18} />}
@@ -88,7 +58,7 @@ export default function LiveMatchCenterSection() {
           </span>
         </div>
         <MatchCenter matchId={matchId} />
-      </motion.div>
+      </div>
     </section>
   );
 }

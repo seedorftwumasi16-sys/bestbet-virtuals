@@ -114,15 +114,8 @@ export default function PremiumLeagueTable({
 
               return (
                 <motion.tr
-                  key={t.position}
-                  initial={{ opacity: 0, x: -12 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.03 }}
-                  whileHover={{
-                    scale: 1.01,
-                    backgroundColor: 'rgba(0, 230, 118, 0.06)',
-                    boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
-                  }}
+                  key={t.team_id || t.short_name || t.position}
+                  initial={false}
                   className={`border-b border-dark-600/20 transition-colors cursor-default ${positionRowClass(t.position)}`}
                 >
                   <td className="py-3.5 pl-4">

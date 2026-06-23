@@ -1,31 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { api } from '@/lib/api';
+import { useMemo } from 'react';
 import TeamLogo from '@/components/ui/TeamLogo';
 import { IconFootball } from '@/components/icons/FootballIcons';
-
-interface Match {
-  id: string;
-  home_team_name: string;
-  away_team_name: string;
-  home_short: string;
-  away_short: string;
-  home_logo?: string;
-  away_logo?: string;
-  scheduled_at: string;
-  status: string;
-}
+import { useMatchesData } from '@/context/MatchesDataContext';
 
 export default function UpcomingMatchesStrip() {
-  const [matches, setMatches] = useState<Match[]>([]);
+  const { upcoming } = useMatchesData();
 
-  useEffect(() => {
-    api<Match[]>('/matches/upcoming')
-      .then((m) => setMatches(m.filter((x) => x.status === 'scheduled').slice(0, 8)))
-      .catch(() => {});
-  }, []);
+  const matches = useMemo(
+    () => upcoming.filter((x) => x.status === 'scheduled').slice(0, 8),
+    [upcoming]
+  );
 
   if (!matches.length) return null;
 
@@ -36,15 +22,11 @@ export default function UpcomingMatchesStrip() {
         <h3 className="font-black text-white text-sm uppercase tracking-wider">Upcoming Matches</h3>
       </div>
       <div className="flex gap-3 p-3 overflow-x-auto scrollbar-thin">
-        {matches.map((m, i) => (
-          <motion.a
+        {matches.map((m) => (
+          <a
             key={m.id}
             href="#upcoming"
-            initial={{ opacity: 0, x: 16 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.05 }}
-            whileHover={{ y: -4, scale: 1.02 }}
-            className="flex-shrink-0 w-[140px] rounded-xl p-3 bg-dark-800/80 border border-dark-600/40 hover:border-primary-500/40 transition-all hover:shadow-neon"
+            className="flex-shrink-0 w-[140px] rounded-xl p-3 bg-dark-800/80 border border-dark-600/40 hover:border-primary-500/40 transition-colors hover:shadow-neon"
           >
             <div className="flex items-center justify-center gap-2 mb-2">
               <TeamLogo short={m.home_short} logoUrl={m.home_logo} size="sm" />
@@ -55,7 +37,7 @@ export default function UpcomingMatchesStrip() {
             <p className="text-[10px] text-primary-500 text-center font-mono font-bold mt-1">
               {formatKickoff(m.scheduled_at)}
             </p>
-          </motion.a>
+          </a>
         ))}
       </div>
     </div>

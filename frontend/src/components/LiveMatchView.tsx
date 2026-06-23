@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { api, getSocketUrl } from '@/lib/api';
-import { io, Socket } from 'socket.io-client';
+import { api } from '@/lib/api';
+import { getSharedSocket } from '@/lib/socket';
 
 interface MatchEvent {
   event_type: string;
@@ -45,10 +45,22 @@ export default function LiveMatchView({ matchId }: { matchId: string }) {
   const [commentary, setCommentary] = useState('');
   const [highlights, setHighlights] = useState<MatchEvent[]>([]);
   const [goalFlash, setGoalFlash] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadMatch = useCallback(async () => {
+    try {
+      const res = await api<MatchData>(`/matches/${matchId}`);
+      setData(res);
+      setHighlights(res.events || []);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load match');
+    }
+  }, [matchId]);
 
   useEffect(() => {
     loadMatch();
-    const socket: Socket = io(getSocketUrl());
+    const socket = getSharedSocket();
 
     socket.on('match:update', (update: {
       matchId: string; minute: number; phase?: string;
@@ -81,25 +93,27 @@ export default function LiveMatchView({ matchId }: { matchId: string }) {
       if (id === matchId) loadMatch();
     });
 
-    return () => { socket.disconnect(); };
-  }, [matchId]);
+    return () => {
+      socket.off('match:update');
+      socket.off('match:goal');
+      socket.off('match:finished');
+    };
+  }, [matchId, loadMatch]);
 
-  const loadMatch = async () => {
-    try {
-      const res = await api<MatchData>(`/matches/${matchId}`);
-      setData(res);
-      setHighlights(res.events || []);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  if (error) {
+    return (
+      <div className="card-glow text-center py-8 text-red-400 border border-red-500/30">
+        <p className="font-semibold">Could not load match</p>
+        <p className="text-sm mt-1 text-gray-400">{error}</p>
+      </div>
+    );
+  }
 
   if (!data) return null;
   const m = data.match;
 
   return (
     <div className="card-glow overflow-hidden">
-      {/* Stadium header */}
       <div className="relative bg-gradient-to-b from-green-900/40 to-dark-800 -mx-4 -mt-4 px-4 pt-4 pb-2 mb-4 border-b border-green-800/30">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -113,7 +127,6 @@ export default function LiveMatchView({ matchId }: { matchId: string }) {
           <span className="text-gray-500 text-xs">Virtual Stadium</span>
         </div>
 
-        {/* Walkout animation */}
         <AnimatePresence>
           {phase === 'walkout' && (
             <motion.div
@@ -130,34 +143,25 @@ export default function LiveMatchView({ matchId }: { matchId: string }) {
         </AnimatePresence>
       </div>
 
-      {/* Scoreboard */}
       <div className="flex items-center justify-center gap-6 sm:gap-10 py-4">
         <TeamScore name={m.home_team_name} short={m.home_short} />
         <div className="text-center relative">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={`${m.home_score}-${m.away_score}`}
-              initial={{ scale: 1.5, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className={`text-4xl sm:text-5xl font-black tabular-nums ${goalFlash ? 'text-accent-500' : 'text-primary-500'}`}
-            >
-              {m.home_score} - {m.away_score}
-            </motion.div>
-          </AnimatePresence>
+          <p
+            className={`text-4xl sm:text-5xl font-black tabular-nums transition-colors duration-300 ${
+              goalFlash ? 'text-accent-500' : 'text-primary-500'
+            }`}
+          >
+            {m.home_score} - {m.away_score}
+          </p>
           {goalFlash && (
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              className="absolute -top-6 left-1/2 -translate-x-1/2 text-accent-500 font-bold text-sm"
-            >
+            <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-accent-500 font-bold text-sm animate-pulse">
               GOAL!
-            </motion.div>
+            </div>
           )}
         </div>
         <TeamScore name={m.away_team_name} short={m.away_short} />
       </div>
 
-      {/* Pitch */}
       <div className="relative bg-gradient-to-b from-green-700/30 to-green-900/20 rounded-2xl h-28 sm:h-32 mb-4 overflow-hidden border border-green-600/20">
         <div className="absolute inset-0 flex items-center justify-center opacity-20">
           <div className="w-20 h-20 border-2 border-white rounded-full" />
@@ -170,32 +174,15 @@ export default function LiveMatchView({ matchId }: { matchId: string }) {
             transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
           />
         )}
-        {/* Crowd dots */}
-        <div className="absolute top-1 left-2 right-2 flex justify-between opacity-30">
-          {Array.from({ length: 20 }).map((_, i) => (
-            <motion.div
-              key={i}
-              className="w-1 h-1 bg-white rounded-full"
-              animate={{ opacity: [0.3, 1, 0.3] }}
-              transition={{ delay: i * 0.1, repeat: Infinity, duration: 2 }}
-            />
-          ))}
-        </div>
       </div>
 
-      {/* Commentary */}
       {commentary && (
-        <motion.div
-          initial={{ opacity: 0, y: 5 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-dark-700/50 rounded-xl px-3 py-2 mb-4 text-sm text-gray-300 border border-dark-600"
-        >
+        <div className="bg-dark-700/50 rounded-xl px-3 py-2 mb-4 text-sm text-gray-300 border border-dark-600">
           <span className="text-accent-500 text-xs font-bold mr-2">COMMENTARY</span>
           {commentary}
-        </motion.div>
+        </div>
       )}
 
-      {/* Stats grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center text-xs mb-4">
         <Stat label="Possession" home={m.possession_home} away={m.possession_away} suffix="%" />
         <Stat label="Shots" home={m.shots_home} away={m.shots_away} />
@@ -203,21 +190,15 @@ export default function LiveMatchView({ matchId }: { matchId: string }) {
         <Stat label="Cards" home={(m.yellow_cards_home || 0) + (m.red_cards_home || 0)} away={(m.yellow_cards_away || 0) + (m.red_cards_away || 0)} />
       </div>
 
-      {/* Timeline */}
       {highlights.length > 0 && (
         <div className="border-t border-dark-600 pt-3">
           <h4 className="text-xs text-gray-400 font-bold mb-2 uppercase tracking-wider">Match Timeline</h4>
           <div className="space-y-1 max-h-32 overflow-y-auto">
             {highlights.slice(-12).map((e, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="text-xs text-gray-300 flex gap-2 py-0.5"
-              >
+              <div key={`${e.minute}-${e.event_type}-${i}`} className="text-xs text-gray-300 flex gap-2 py-0.5">
                 <span className="text-accent-500 font-mono font-bold w-8">{e.minute}&apos;</span>
                 <span className="truncate">{e.description || e.event_type}</span>
-              </motion.div>
+              </div>
             ))}
           </div>
         </div>

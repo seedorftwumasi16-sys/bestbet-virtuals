@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { api, formatCurrency } from '@/lib/api';
+import { formatCurrency } from '@/lib/api';
 import TeamLogo from '@/components/ui/TeamLogo';
 import {
   SkyBetWordmark,
@@ -13,29 +13,7 @@ import {
 import { IconTimer, IconLive } from '@/components/icons/FootballIcons';
 import { HeroSkeleton } from '@/components/ui/LoadingSkeleton';
 import { LEAGUE_META } from '@/lib/teamColors';
-
-interface LeagueStats {
-  total_played: number;
-  live_count: number;
-  season: string;
-  match_interval_seconds: number;
-  match_interval_minutes: number;
-  betting_close_seconds: number;
-  prize_pool: number;
-  active_league: string | null;
-  leader: { name: string; short_name: string; logo_url?: string; points: number } | null;
-  next_match: {
-    id: string;
-    scheduled_at: string;
-    home_name: string;
-    home_short: string;
-    home_logo?: string;
-    away_name: string;
-    away_short: string;
-    away_logo?: string;
-    league_name?: string;
-  } | null;
-}
+import { useMatchesData } from '@/context/MatchesDataContext';
 
 function formatCountdown(totalSeconds: number) {
   if (totalSeconds <= 0) return 'LIVE';
@@ -44,55 +22,41 @@ function formatCountdown(totalSeconds: number) {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
-interface Props {
-  leagueFilter?: string | null;
-}
-
-export default function StadiumHero({ leagueFilter = null }: Props) {
-  const [stats, setStats] = useState<LeagueStats | null>(null);
+export default function StadiumHero() {
+  const { leagueStats: stats, loading } = useMatchesData();
   const [kickoff, setKickoff] = useState('--:--');
   const [bettingClose, setBettingClose] = useState('--:--');
-  const [loading, setLoading] = useState(true);
-  const [matchNumber, setMatchNumber] = useState(1);
+
+  const nextMatchId = stats?.next_match?.id;
+  const nextScheduledAt = stats?.next_match?.scheduled_at;
+  const bettingCloseSec = stats?.betting_close_seconds ?? 10;
 
   useEffect(() => {
-    const q = leagueFilter ? `?league=${encodeURIComponent(leagueFilter)}` : '';
-    api<LeagueStats>(`/matches/league-stats${q}`)
-      .then((data) => {
-        setStats(data);
-        setMatchNumber((data.total_played || 0) + 1);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [leagueFilter]);
-
-  useEffect(() => {
-    const next = stats?.next_match;
-    const closeSec = stats?.betting_close_seconds ?? 10;
-    if (!next) {
+    if (!nextScheduledAt) {
       setKickoff('Starting...');
       setBettingClose('--:--');
       return;
     }
     const tick = () => {
-      const diffMs = new Date(next.scheduled_at).getTime() - Date.now();
+      const diffMs = new Date(nextScheduledAt).getTime() - Date.now();
       const diffSec = Math.floor(diffMs / 1000);
       setKickoff(formatCountdown(diffSec));
-      const betSec = diffSec - closeSec;
+      const betSec = diffSec - bettingCloseSec;
       setBettingClose(betSec > 0 ? formatCountdown(betSec) : 'CLOSED');
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [stats?.next_match, stats?.betting_close_seconds]);
+  }, [nextScheduledAt, bettingCloseSec]);
 
-  if (loading) return <HeroSkeleton className="min-h-[420px] rounded-none" />;
+  if (loading && !stats) return <HeroSkeleton className="min-h-[420px] rounded-none" />;
 
   const intervalSec = stats?.match_interval_seconds ?? 60;
   const intervalLabel = intervalSec < 60 ? `${intervalSec}s` : `${Math.round(intervalSec / 60)} min`;
   const leagueName = stats?.next_match?.league_name || stats?.active_league || 'Premier League';
   const leagueMeta = LEAGUE_META[leagueName];
-  const matchId = stats?.next_match?.id?.slice(0, 8).toUpperCase() ?? '—';
+  const matchNumber = (stats?.total_played || 0) + 1;
+  const matchId = nextMatchId?.slice(0, 8).toUpperCase() ?? '—';
   const jackpot = stats?.prize_pool ?? 25000;
 
   return (
@@ -189,21 +153,18 @@ export default function StadiumHero({ leagueFilter = null }: Props) {
 
               {stats?.next_match && (
                 <div className="flex items-center justify-between gap-3 mb-5 py-2">
-                  <div className="text-center flex-1">
+                  <div className="text-center flex-1 min-w-0">
                     <TeamLogo short={stats.next_match.home_short} logoUrl={stats.next_match.home_logo} size="xl" />
                     <p className="text-xs text-white font-bold mt-2 truncate">{stats.next_match.home_name}</p>
                   </div>
-                  <div className="text-center px-2 space-y-3">
+                  <div className="text-center px-2 space-y-3 shrink-0">
                     <div>
-                      <motion.div
-                        key={kickoff}
-                        animate={{ scale: [1, 1.04, 1] }}
-                        transition={{ duration: 1, repeat: Infinity }}
+                      <p
                         className={`text-4xl sm:text-5xl font-black tabular-nums ${kickoff === 'LIVE' ? 'text-red-400' : 'text-white'}`}
                         style={{ textShadow: kickoff === 'LIVE' ? '0 0 30px rgba(239,68,68,0.5)' : '0 0 30px rgba(0,230,118,0.35)' }}
                       >
                         {kickoff}
-                      </motion.div>
+                      </p>
                       <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-1 font-bold">Kickoff</p>
                     </div>
                     <div className="pt-2 border-t border-dark-600">
@@ -213,7 +174,7 @@ export default function StadiumHero({ leagueFilter = null }: Props) {
                       </p>
                     </div>
                   </div>
-                  <div className="text-center flex-1">
+                  <div className="text-center flex-1 min-w-0">
                     <TeamLogo short={stats.next_match.away_short} logoUrl={stats.next_match.away_logo} size="xl" />
                     <p className="text-xs text-white font-bold mt-2 truncate">{stats.next_match.away_name}</p>
                   </div>

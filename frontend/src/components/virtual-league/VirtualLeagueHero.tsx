@@ -202,16 +202,13 @@ export default function VirtualLeagueHero() {
                     </p>
                   </div>
                   <div className="text-center">
-                    <motion.p
-                      key={countdown}
-                      initial={{ scale: 1.1 }}
-                      animate={{ scale: 1 }}
+                    <p
                       className={`text-3xl font-black tabular-nums ${
                         countdown === 'LIVE' ? 'text-red-400 animate-pulse-live' : 'text-white'
                       }`}
                     >
                       {countdown}
-                    </motion.p>
+                    </p>
                     <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-1">Kickoff</p>
                   </div>
                   <div className="text-center">

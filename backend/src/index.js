@@ -114,7 +114,9 @@ if (process.env.USE_IN_MEMORY_DB === 'true') {
 }
 
 initMatchScheduler(io);
-setInterval(processScheduledMatches, 5000);
+setInterval(() => {
+  processScheduledMatches().catch((err) => console.error('Scheduler poll error:', err.message));
+}, 5000);
 
 // Use BACKEND_PORT so shell PORT=3001 (Next.js) never hijacks the API server
 const PORT = parseInt(process.env.BACKEND_PORT || process.env.PORT || '4000', 10);

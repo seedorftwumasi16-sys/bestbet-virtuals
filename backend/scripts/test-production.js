@@ -1,7 +1,7 @@
 /**
  * Production smoke tests for SkyBet API
  */
-const API_BASE = (process.env.API_URL || 'https://bestbet-api-production.up.railway.app').replace(/\/$/, '');
+const API_BASE = (process.env.API_URL || 'https://bestbet-api-production-2f20.up.railway.app').replace(/\/$/, '');
 const API = `${API_BASE}/api`;
 
 let passed = 0;
