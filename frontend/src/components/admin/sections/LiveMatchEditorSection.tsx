@@ -15,6 +15,7 @@ interface MatchRow {
   live_minute?: number;
   is_paused?: boolean;
   possession_home?: number;
+  possession_away?: number;
   shots_home?: number;
   shots_away?: number;
   corners_home?: number;
